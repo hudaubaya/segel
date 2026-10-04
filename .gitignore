@@ -1,0 +1,14 @@
+# Artefak simulasi cocotb / Icarus
+sim_build/
+results.xml
+*.vcd
+*.fst
+__pycache__/
+*.pyc
+
+# Lingkungan Python lokal
+.venv/
+results_*.xml
+
+# Model sel sky130 yang diunduh `make sky130-cells`
+.cache/
