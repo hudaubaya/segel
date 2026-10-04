@@ -28,7 +28,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/sky130_fd_sc_hd
-          key: sky130-sc-hd-${{ hashFiles('Makefile', 'rtl/baseline/crc8_0901/gl/*.v') }}
+          key: sky130-sc-hd-${{ hashFiles('Makefile', 'rtl/baseline/*/gl/*.v') }}
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
@@ -45,4 +45,6 @@ jobs:
             rtl/baseline/*/test/results.xml
             rtl/baseline/*/test/tb.vcd
             tb/*/results_*.xml
+            tb/audit/*/results*.xml
+            tb/audit/*/audit_*.json
           if-no-files-found: ignore

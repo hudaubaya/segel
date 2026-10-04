@@ -29,7 +29,7 @@ COMPILE_ARGS        += -grelative-include
 # mis. sky130_fd_sc_hd__dfrtp_4 -> cells/dfrtp/sky130_fd_sc_hd__dfrtp_4.v
 GL_CELL_SOURCES     := $(shell grep -oE '^ *sky130_fd_sc_hd__[a-z0-9]+_[0-9]+' $(GL_NETLIST) | tr -d ' ' | sort -u | \
                          sed -E 's|^sky130_fd_sc_hd__(.*)_([0-9]+)$$|$(SKY130_SC_HD)/cells/\1/sky130_fd_sc_hd__\1_\2.v|')
-VERILOG_SOURCES     += $(TB_DIR)/gl_stubs.v $(GL_CELL_SOURCES) $(GL_NETLIST)
+VERILOG_SOURCES     += $(REPO_ROOT)/tb/common/gl_stubs.v $(GL_CELL_SOURCES) $(GL_NETLIST)
 
 endif
 

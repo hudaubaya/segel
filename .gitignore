@@ -12,3 +12,6 @@ results_*.xml
 
 # Model sel sky130 yang diunduh `make sky130-cells`
 .cache/
+
+# Ringkasan audit yang ditulis test (tb/audit/*)
+audit_*.json
