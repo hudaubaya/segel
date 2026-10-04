@@ -24,6 +24,12 @@ jobs:
           sudo apt-get install -y iverilog
           iverilog -V | head -n 1
 
+      - name: Cache sky130 cell models
+        uses: actions/cache@v4
+        with:
+          path: .cache/sky130_fd_sc_hd
+          key: sky130-sc-hd-${{ hashFiles('Makefile', 'rtl/baseline/crc8_0901/gl/*.v') }}
+
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
@@ -38,4 +44,5 @@ jobs:
           path: |
             rtl/baseline/*/test/results.xml
             rtl/baseline/*/test/tb.vcd
+            tb/*/results_*.xml
           if-no-files-found: ignore

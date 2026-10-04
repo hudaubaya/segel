@@ -16,7 +16,7 @@ Salinan `commit_id.json` itu ikut disimpan di direktori tiap baseline.
 |---|---|---|---|---|---|---|
 | 0200 | `rtl/baseline/serdes_0200/` | `tt_um_serdes` | [Santeep/TT_UM_SERDES](https://github.com/Santeep/TT_UM_SERDES) | `b8aba214a7adf76361c6c767eccd904c04f3af1c` (2024-05-16) | Apache-2.0 | RTL + test, lulus |
 | 0036 | `rtl/baseline/cdc_fifo_0036/` | `tt_um_pa1mantri_cdc_fifo` | [Pa1mantri/tt07_cdc_fifo](https://github.com/Pa1mantri/tt07_cdc_fifo) | `ff14afce16efaed6cf4bd2bd030ef32e10039362` (2024-05-31) | Apache-2.0 | RTL + test, lulus |
-| 0901 | `rtl/baseline/crc8_0901/` | `tt_um_aidenfoxivey` | [aidenfoxivey/tt07-verilog-template](https://github.com/aidenfoxivey/tt07-verilog-template) | `ad99cd0eea15a6364ec62136f5d11c1434b5e5a8` | Apache-2.0 | **RTL tidak tersedia** |
+| 0901 | `rtl/baseline/crc8_0901/` | `tt_um_aidenfoxivey` | [aidenfoxivey/tt07-verilog-template](https://github.com/aidenfoxivey/tt07-verilog-template) | `ad99cd0eea15a6364ec62136f5d11c1434b5e5a8` | Apache-2.0 | RTL tidak tersedia; netlist GL tersimulasi, RTL pengganti di `rtl/crc8/` |
 
 Semua `LICENSE` identik byte-per-byte (Apache License 2.0, sha256 file sama
 di ketiga direktori). File `test/test.py` dari template Tiny Tapeout membawa
@@ -70,17 +70,19 @@ dipertahankan.
     pin daya `VPWR`/`VGND`), sha256
     `d63aae59038e9c0e65edb5786f742013c4b9ddd001c95b8ef66fd91b48bdbe0a`.
 - Konsekuensi:
-  - Tidak ada RTL yang bisa dipakai ulang atau dimodifikasi; netlist ini hanya
-    referensi perilaku as-taped-out.
-  - Simulasi netlist butuh model sel sky130 (`$PDK_ROOT/sky130A/libs.ref/sky130_fd_sc_hd/verilog/`)
-    yang tidak ada di CI ini. `make test-baseline-crc8_0901` sengaja gagal dengan
-    pesan `BLOCKED` dan tidak termasuk `make test`.
-- Tindak lanjut yang diperlukan (salah satu):
-  1. Minta RTL `ad99cd0` langsung ke penulis (Discord `aidenfoxivey`), lalu ganti
-     direktori ini dengan salinan repo pada commit tersebut; atau
-  2. Tulis ulang CRC-8 (polinomial x^8+x^2+x+1, nilai awal 0x00, 2 byte per siklus
-     menurut `docs/info.md`) sebagai RTL SEGEL sendiri, dan pakai netlist ini
-     sebagai golden reference via simulasi gate-level dengan PDK.
+  - Tidak ada RTL upstream yang bisa dipakai ulang. Sebagai gantinya, CRC-8 ditulis
+    ulang sebagai RTL SEGEL di `rtl/crc8/` (lihat [`docs/crc8.md`](crc8.md)).
+  - Netlist ini dipakai sebagai **golden reference**: `make test-baseline-crc8_0901`
+    (alias `make test-crc8-gl`) menjalankan testbench `tb/crc8/` pada netlist dengan
+    model sel sky130_fd_sc_hd yang diunduh otomatis (`make sky130-cells`), dan
+    termasuk dalam `make test`.
+  - Netlist memakai satu sel open_pdks, `sky130_ef_sc_hd__decap_12` (kapasitor
+    decoupling tanpa logika), yang tidak ada di repo model sel; stub kosongnya ada
+    di `tb/crc8/gl_stubs.v`.
+- Perilaku yang terukur dari netlist (berbeda dari `docs/info.md` upstream yang
+  menyebut "dua byte"): **satu byte per clock** dari `ui_in`, diserap saat
+  `uio_in[0]=1`; `rst_n` reset asinkron ke 0x00; `ena` dan `uio_in[7:1]` tidak
+  terhubung; `uio_out`/`uio_oe` diikat 0.
 
 ## Cara memperbarui baseline
 

@@ -8,3 +8,7 @@ __pycache__/
 
 # Lingkungan Python lokal
 .venv/
+results_*.xml
+
+# Model sel sky130 yang diunduh `make sky130-cells`
+.cache/

@@ -3,7 +3,7 @@
 ## Struktur
 
 ```
-rtl/                 RTL SEGEL
+rtl/                 RTL SEGEL (rtl/crc8/: CRC-8, lihat docs/crc8.md)
 rtl/baseline/        Baseline TT07 yang disalin apa adanya (lihat docs/baselines.md)
 tb/                  Testbench cocotb untuk RTL SEGEL
 model/               Model referensi
@@ -23,7 +23,9 @@ pip install -r requirements.txt
 make test
 ```
 
-`make help` menampilkan target lain. CI (`.github/workflows/test.yml`)
+Simulasi gate-level mengunduh model sel sky130 (±4 MB) ke `.cache/` saat
+pertama kali dijalankan, jadi butuh akses ke github.com. `make help`
+menampilkan target lain. CI (`.github/workflows/test.yml`)
 menjalankan `make test` di setiap pull request dan push ke `main`.
 
 ## Lisensi
