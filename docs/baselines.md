@@ -32,6 +32,10 @@ dipertahankan.
 - HEAD upstream saat disalin: `a7bde309d5398716ea170452a7cfa8a9e163c45c` (2024-07-06). Selisih
   terhadap commit tapeout hanya `docs/info.md` dan `info.yaml`; `src/` dan `test/` identik.
 - File yang disalin: `src/`, `test/`, `docs/`, `info.yaml`, `LICENSE`.
+- Netlist tapeout: `gl/tt_um_serdes.v` dari repo shuttle (`projects/tt_um_serdes/`,
+  commit shuttle `3c541b4b`), sha256
+  `1cdae9815b349049402aa95d8ab30e62e0af3e822374261eeb16da1bfde212fc`. Dipakai oleh
+  audit gate-level (`docs/baseline_audit.md`).
 - Catatan:
   - `test/test.py` masih test placeholder template TT (hanya memeriksa
     `uo_out == 0` satu siklus setelah reset). Lulusnya test ini **tidak**
@@ -50,6 +54,10 @@ dipertahankan.
   manual); `src/` dan `test/` identik.
 - File yang disalin: `src/`, `test/`, `docs/`, `info.yaml`, `LICENSE`.
   Direktori `gds/` tidak disalin (bukan bagian commit tapeout).
+- Netlist tapeout: `gl/tt_um_pa1mantri_cdc_fifo.v` dari repo shuttle
+  (`projects/tt_um_pa1mantri_cdc_fifo/`, commit shuttle `3c541b4b`), sha256
+  `a954ce307f53b008e484d1b08280e134dd32c2663d326ee090a632731ddee2eb`. Dipakai oleh
+  audit gate-level (`docs/baseline_audit.md`).
 - Catatan: test upstream hanya memeriksa flag `empty`/`full` setelah reset dan
   setelah satu penulisan; data yang dibaca tidak diverifikasi.
 
@@ -78,11 +86,15 @@ dipertahankan.
     termasuk dalam `make test`.
   - Netlist memakai satu sel open_pdks, `sky130_ef_sc_hd__decap_12` (kapasitor
     decoupling tanpa logika), yang tidak ada di repo model sel; stub kosongnya ada
-    di `tb/crc8/gl_stubs.v`.
+    di `tb/common/gl_stubs.v`.
 - Perilaku yang terukur dari netlist (berbeda dari `docs/info.md` upstream yang
   menyebut "dua byte"): **satu byte per clock** dari `ui_in`, diserap saat
   `uio_in[0]=1`; `rst_n` reset asinkron ke 0x00; `ena` dan `uio_in[7:1]` tidak
   terhubung; `uio_out`/`uio_oe` diikat 0.
+
+## Audit
+
+Hasil pengujian ketiga baseline apa adanya ada di [`docs/baseline_audit.md`](baseline_audit.md).
 
 ## Cara memperbarui baseline
 
