@@ -1,5 +1,5 @@
 // Toplevel cocotb untuk CRC-8.
-//   default      : RTL SEGEL (tt_um_segel_crc8)
+//   default      : RTL SEGEL (tt_um_hu_crc8)
 //   -DGL_TEST    : netlist gate-level baseline TT07 #0901 (tt_um_aidenfoxivey)
 // Keduanya diuji dengan test.py yang sama, jadi lulus di keduanya berarti
 // perilaku RTL sama dengan desain yang di-tapeout untuk semua vektor uji.
@@ -33,7 +33,7 @@ module tb ();
       .VPWR   (VPWR),
       .VGND   (VGND),
 `else
-  tt_um_segel_crc8 dut (
+  tt_um_hu_crc8 dut (
 `endif
       .ui_in  (ui_in),
       .uo_out (uo_out),
