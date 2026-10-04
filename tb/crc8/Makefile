@@ -17,7 +17,7 @@ ifneq ($(GATES),yes)
 SIM_BUILD            = sim_build/rtl
 COCOTB_RESULTS_FILE ?= results_rtl.xml
 VERILOG_SOURCES     += $(REPO_ROOT)/rtl/crc8/crc8.v
-VERILOG_SOURCES     += $(REPO_ROOT)/rtl/crc8/tt_um_hu_crc8.v
+VERILOG_SOURCES     += $(REPO_ROOT)/rtl/crc8/tt_um_aduhayabu_crc8.v
 
 else
 

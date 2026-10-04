@@ -23,11 +23,11 @@ bukan dengan deskripsi di `docs/info.md` upstream.
 | File | Isi |
 |---|---|
 | `rtl/crc8/crc8.v` | Inti CRC-8, parameter `POLY`/`INIT` |
-| `rtl/crc8/tt_um_hu_crc8.v` | Wrapper Tiny Tapeout, pinout sama dengan #0901 |
+| `rtl/crc8/tt_um_aduhayabu_crc8.v` | Wrapper Tiny Tapeout, pinout sama dengan #0901 |
 | `model/crc8.py` | Model referensi Python + self-test |
 | `tb/crc8/` | Testbench cocotb untuk RTL **dan** netlist baseline |
 
-## Pinout (`tt_um_hu_crc8`)
+## Pinout (`tt_um_aduhayabu_crc8`)
 
 | Pin | Fungsi |
 |---|---|
