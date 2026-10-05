@@ -4,7 +4,8 @@ Ketiga baseline di `rtl/baseline/` diuji **apa adanya** dengan cocotb: tanpa
 satu baris pun diubah, pada commit yang di-tapeout (lihat `docs/baselines.md`).
 Tidak ada yang diperbaiki di sini; dokumen ini hanya mencatat temuan.
 Perbaikan dibuat di salinan SEGEL yang terpisah, sementara baseline tetap apa
-adanya. Saat ini F1, F2, F3, dan F5 sudah diperbaiki di `rtl/cdc_fifo/` (lihat
+adanya. Saat ini F1, F2, F3, F5, dan sinkronisasi reset sudah diperbaiki di
+`rtl/cdc_fifo/` (lihat
 [`docs/cdc_fifo.md`](cdc_fifo.md)).
 
 ## Ringkasan
@@ -53,7 +54,7 @@ Menjalankan semuanya: `make test-audit` (termasuk dalam `make test`).
 | `make test-audit-gl-serdes` | 2 test netlist SerDes |
 | `make test-audit-gl-cdc_fifo` | 4 test netlist CDC FIFO |
 | `make test-audit-gl-gray` | Glitch pointer Gray di netlist CDC FIFO (Verilog murni) |
-| `make test-audit-struct-cdc_fifo` | Struktur synchronizer CDC FIFO setelah sintesis Yosys (F5) |
+| `make test-audit-struct-cdc_fifo` | Struktur synchronizer dan reset CDC FIFO setelah sintesis Yosys |
 | `make test-crc8-gl` | 5 test netlist CRC-8 (sama dengan `tb/crc8`) |
 
 ---
@@ -284,9 +285,18 @@ Bukti:
     silikon tidak bisa dibuktikan di sini. [Menebak]
   - Praktik umum adalah meregister pointer Gray di domain sumber.
   - **Status:** diperbaiki di `rtl/cdc_fifo/` (SEGEL); baseline tetap apa adanya.
-- Deassertion reset (dari pin, asinkron) tidak disinkronkan ke masing-masing
-  clock. [Kemungkinan Besar] berisiko rendah, karena pointer sama-sama mulai
-  dari 0, tetapi tidak diuji.
+- **Deassertion reset (dari pin, asinkron) tidak disinkronkan** ke
+  masing-masing clock.
+  - **Struktur:** [Pasti] setelah sintesis Yosys, 0 dari 30 flop ber-reset
+    menerima reset yang tersinkron ke domainnya; semuanya langsung dari pin.
+    Test: `make test-audit-struct-cdc_fifo`.
+  - **Dampak:** reset yang dilepas dekat tepi clock melanggar
+    recovery/removal, sehingga flop bisa metastabil. [Kemungkinan Besar]
+    risikonya rendah karena pointer mulai dari 0 dan langkah pertamanya hanya
+    mengubah 1 bit. Namun kalau `increment` aktif saat reset dilepas, data
+    bisa ditulis tanpa pointer ikut naik. Simulasi RTL tidak bisa
+    memperlihatkannya.
+  - **Status:** diperbaiki di `rtl/cdc_fifo/` (SEGEL); baseline tetap apa adanya.
 - Test upstream hanya memeriksa `empty`/`full` setelah satu write, dan tidak
   memeriksa data.
 

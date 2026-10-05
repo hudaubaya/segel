@@ -5,7 +5,8 @@ TOPLEVEL_LANG ?= verilog
 REPO_ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 SRC_DIR   := $(REPO_ROOT)/rtl/cdc_fifo
 SRCS      := tt_um_aduhayabu_cdc_fifo.sv cdc_fifo.sv dpram.sv cdc_fifo_read_state.sv \
-             cdc_fifo_write_state.sv binary_to_gray.sv gray_to_binary.sv synchronizer.sv
+             cdc_fifo_write_state.sv binary_to_gray.sv gray_to_binary.sv synchronizer.sv \
+             reset_synchronizer.sv
 
 SIM_BUILD            = sim_build
 COCOTB_RESULTS_FILE ?= results.xml
