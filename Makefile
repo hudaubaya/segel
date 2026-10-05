@@ -2,6 +2,7 @@
 #
 #   make test                      semua test (model, RTL, gate-level, baseline, audit)
 #   make test-<nama>               satu target: model crc8 crc8-gl cdc_fifo baseline-<b> audit audit-<a>
+#                                  (struktur CDC butuh yosys)
 #   make sky130-cells              unduh model sel sky130_fd_sc_hd untuk simulasi GL
 #   make clean                     hapus artefak simulasi (cache sel tidak ikut)
 #
@@ -41,14 +42,15 @@ define check_results
 	  echo "PASS $(2)"
 endef
 
-.PHONY: help test test-model test-crc8 test-crc8-gl test-cdc_fifo test-baseline test-audit sky130-cells clean \
+.PHONY: help test test-model test-crc8 test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline \
+        test-audit test-audit-struct-cdc_fifo sky130-cells clean \
         $(addprefix test-baseline-,$(BASELINES) crc8_0901) \
         $(addprefix test-audit-,$(AUDITS)) $(addprefix test-audit-gl-,$(AUDITS_GL)) test-audit-gl-gray
 
 help:
 	@sed -n '3,7p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
-test: test-model test-crc8 test-crc8-gl test-cdc_fifo test-baseline test-audit
+test: test-model test-crc8 test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline test-audit
 
 test-model:
 	@$(PYTHON) model/crc8.py
@@ -72,6 +74,11 @@ test-cdc_fifo:
 	@cd tb/cdc_fifo && rm -f results.xml && $(MAKE) --no-print-directory SIM=$(SIM)
 	$(call check_results,tb/cdc_fifo/results.xml,cdc_fifo)
 
+# F5: pointer Gray yang menyeberang domain harus langsung dari flop (sintesis Yosys).
+test-cdc_fifo-struct:
+	@echo "==> cdc_fifo (struktur synchronizer, Yosys)"
+	@$(PYTHON) tb/struct/check_cdc_regs.py --src rtl/cdc_fifo --expect registered
+
 test-baseline: $(addprefix test-baseline-,$(BASELINES) crc8_0901)
 
 $(addprefix test-baseline-,$(BASELINES)): test-baseline-%:
@@ -87,7 +94,12 @@ test-baseline-crc8_0901: test-crc8-gl
 # jadi target ini lulus selama perilaku baseline sama dengan yang dilaporkan.
 # Audit CRC-8 (#0901) adalah test-crc8-gl.
 test-audit: $(addprefix test-audit-,$(AUDITS)) $(addprefix test-audit-gl-,$(AUDITS_GL)) \
-            test-audit-gl-gray test-crc8-gl
+            test-audit-gl-gray test-audit-struct-cdc_fifo test-crc8-gl
+
+# F5 di baseline: synchronizer masih diumpan logika kombinasional (diharapkan).
+test-audit-struct-cdc_fifo:
+	@echo "==> audit cdc_fifo (struktur synchronizer, Yosys)"
+	@$(PYTHON) tb/struct/check_cdc_regs.py --src $(BASELINE_DIR)/cdc_fifo_0036/src --expect combinational
 
 $(addprefix test-audit-,$(AUDITS)): test-audit-%:
 	@echo "==> audit $* (RTL)"

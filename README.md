@@ -15,7 +15,8 @@ docs/                Dokumentasi
 
 ## Menjalankan test
 
-Butuh Icarus Verilog (diuji dengan 12.0) dan Python 3.11.
+Butuh Icarus Verilog (diuji dengan 12.0), Yosys (diuji dengan 0.33, untuk
+pemeriksaan struktur CDC FIFO) dan Python 3.11.
 
 ```sh
 python3 -m venv .venv && . .venv/bin/activate
