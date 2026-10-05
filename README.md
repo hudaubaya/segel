@@ -4,7 +4,8 @@
 
 ```
 rtl/                 RTL SEGEL (rtl/crc8/: CRC-8, docs/crc8.md; rtl/cdc_fifo/: CDC FIFO, docs/cdc_fifo.md;
-                     rtl/ascon_core.v: Ascon-AEAD128/XOF128 SP 800-232, docs/ascon.md)
+                     rtl/ascon_core.v: Ascon-AEAD128/XOF128 SP 800-232, docs/ascon.md;
+                     rtl/phy/: PHY serial 8b/10b source-synchronous, docs/phy.md)
 rtl/baseline/        Baseline TT07 yang disalin apa adanya (lihat docs/baselines.md)
 tb/                  Testbench cocotb untuk RTL SEGEL
 model/               Model referensi

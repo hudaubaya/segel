@@ -54,6 +54,9 @@ jobs:
             tb/*/results_*.xml
             tb/ascon/results.xml
             tb/ascon/ascon_cycles.json
+            tb/phy/results.xml
+            tb/phy/phy_bit_errors.json
+            tb/phy_units/results.xml
             build/ascon_mutants/*/results.xml
             build/ascon_mutants/*/sim.log
             tb/audit/*/results*.xml
