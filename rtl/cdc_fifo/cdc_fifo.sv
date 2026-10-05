@@ -4,6 +4,8 @@
 // src/cdc_fifo.sv), Apache-2.0. Perubahan oleh SEGEL:
 //   - reset tiap domain melewati reset_synchronizer (assert asinkron,
 //     deassert sinkron ke clock domain itu)
+//   - F6: reset dari domain mana pun mereset KEDUA domain, sehingga pointer
+//     kedua sisi tidak pernah tidak konsisten
 // Lihat docs/cdc_fifo.md.
 
 //`include "dpram.sv"
@@ -42,19 +44,28 @@ module cdc_fifo #(
 
   assign write_enable = (!full & write_increment);
 
+  // F6: kedua domain selalu direset bersama. Mereset hanya satu sisi saat FIFO
+  // berisi membuat pointer kedua sisi tidak konsisten (data lama terbaca lagi
+  // atau isi memori basi terbaca). Reset masuk ke kedua domain secara asinkron
+  // dan dilepas sinkron ke clock masing-masing. Urutan pelepasan aman: domain
+  // yang masih reset menahan pointer-nya di 0, dan itu konsisten dengan FIFO
+  // kosong yang dilihat domain lainnya.
+  logic fifo_reset;
+  assign fifo_reset = write_reset | read_reset;
+
   // Reset per domain: assert asinkron, deassert sinkron ke clock domain itu.
   // Semua flop ber-reset di bawah ini memakai versi tersinkron.
   logic write_reset_sync, read_reset_sync;
 
   reset_synchronizer write_reset_synchronizer (
     .clock(write_clock),
-    .reset_in(write_reset),
+    .reset_in(fifo_reset),
     .reset_out(write_reset_sync)
   );
 
   reset_synchronizer read_reset_synchronizer (
     .clock(read_clock),
-    .reset_in(read_reset),
+    .reset_in(fifo_reset),
     .reset_out(read_reset_sync)
   );
 

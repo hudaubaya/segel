@@ -7,6 +7,7 @@
  *   - nama modul top menjadi tt_um_aduhayabu_cdc_fifo
  *   - F1: write_data mengambil ui_in[7:4], bukan hanya ui_in[4]
  *   - F2: rst_n global (aktif rendah) ikut mereset kedua domain
+ *   - F6: pin reset uio mana pun mereset kedua domain (lihat cdc_fifo.sv)
  * Lihat docs/cdc_fifo.md dan docs/baseline_audit.md.
  */
 
@@ -48,9 +49,11 @@ module tt_um_aduhayabu_cdc_fifo (
   
   wire read_reset,write_reset;
   
-  // F2: rst_n global (konvensi Tiny Tapeout) mereset kedua domain sekaligus.
-  // Pin reset per domain di uio_in[0]/uio_in[1] tetap berfungsi seperti di
-  // datasheet #0036. Keduanya reset asinkron aktif rendah.
+  // F2: rst_n global (konvensi Tiny Tapeout) ikut mereset FIFO.
+  // F6: pin uio_in[0] ("write_reset") dan uio_in[1] ("read_reset") tetap ada,
+  // tetapi cdc_fifo menggabungkan keduanya, sehingga pin mana pun mereset
+  // KEDUA domain (berbeda dari datasheet #0036). Semua reset asinkron aktif
+  // rendah.
   assign write_reset = !uio_in[0] | !rst_n;
   assign read_reset  = !uio_in[1] | !rst_n;
   

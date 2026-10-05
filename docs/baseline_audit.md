@@ -4,7 +4,7 @@ Ketiga baseline di `rtl/baseline/` diuji **apa adanya** dengan cocotb: tanpa
 satu baris pun diubah, pada commit yang di-tapeout (lihat `docs/baselines.md`).
 Tidak ada yang diperbaiki di sini; dokumen ini hanya mencatat temuan.
 Perbaikan dibuat di salinan SEGEL yang terpisah, sementara baseline tetap apa
-adanya. Saat ini F1, F2, F3, F5, dan sinkronisasi reset sudah diperbaiki di
+adanya. Saat ini F1, F2, F3, F5, F6, dan sinkronisasi reset sudah diperbaiki di
 `rtl/cdc_fifo/` (lihat
 [`docs/cdc_fifo.md`](cdc_fifo.md)).
 
@@ -13,7 +13,7 @@ adanya. Saat ini F1, F2, F3, F5, dan sinkronisasi reset sudah diperbaiki di
 | Baseline | Benar | Salah | Tidak ada |
 |---|---|---|---|
 | **SerDes #0200** | Sub-blok 6b/4b masing-masing berasal dari tabel standar; decoder adalah invers persis encoder-nya sendiri | Tabel encoder campuran kolom RD−/RD+ (15 byte menghasilkan word tidak valid, 6 di antaranya disparity −4); urutan bit serial salah; loopback TX→RX hanya 8/256 byte; `ser_out` tidak bisa keluar dari chip | Running disparity, kode K (termasuk K28.5), flag kode ilegal, flag galat disparity, penyelarasan word/comma |
-| **CDC FIFO #0036** | Inti FIFO: tanpa data hilang/ganda/tertukar pada 24 rasio clock acak selama isi < penuh; `empty` benar; Gray 1 bit per langkah (RTL); `full` benar saat pointer read ≠ 0 | Wrapper hanya meneruskan 1 dari 4 bit data; `full` gagal saat pointer read tersinkron = 0, sehingga 32 data hilang tanpa tanda | Reset lewat `rst_n` (memakai pin `uio`) |
+| **CDC FIFO #0036** | Inti FIFO: tanpa data hilang/ganda/tertukar pada 24 rasio clock acak selama isi < penuh; `empty` benar; Gray 1 bit per langkah (RTL); `full` benar saat pointer read ≠ 0 | Wrapper hanya meneruskan 1 dari 4 bit data; `full` gagal saat pointer read tersinkron = 0, sehingga 32 data hilang tanpa tanda; reset satu domain membuat data basi terbaca atau data terbaca ulang | Reset lewat `rst_n` (memakai pin `uio`) |
 | **CRC-8 #0901** | Netlist = model poly 0x07, init 0x00 untuk semua 65.536 pasangan (state, byte) | Hanya dokumentasi: "dua byte" (nyatanya satu byte per clock); label "CCITT" ambigu | RTL sumber dan testbench upstream |
 
 Cara membaca label keyakinan: **[Pasti]** dibuktikan simulasi atau struktur
@@ -50,7 +50,7 @@ Menjalankan semuanya: `make test-audit` (termasuk dalam `make test`).
 | Target | Isi |
 |---|---|
 | `make test-audit-serdes` | 16 test RTL SerDes |
-| `make test-audit-cdc_fifo` | 8 test RTL CDC FIFO |
+| `make test-audit-cdc_fifo` | 10 test RTL CDC FIFO |
 | `make test-audit-gl-serdes` | 2 test netlist SerDes |
 | `make test-audit-gl-cdc_fifo` | 4 test netlist CDC FIFO |
 | `make test-audit-gl-gray` | Glitch pointer Gray di netlist CDC FIFO (Verilog murni) |
@@ -257,6 +257,22 @@ Bukti:
   akhir uji ada 96 item yang tidak terbaca.
 - Test: `test_core_capacity_after_reset`, `test_core_random_ratios`,
   `test_gl_capacity_after_reset`.
+- **Status:** diperbaiki di `rtl/cdc_fifo/` (SEGEL); baseline tetap apa adanya.
+  Lihat `docs/cdc_fifo.md`.
+
+**F6 — Reset satu domain membuat isi FIFO tidak konsisten.** [Pasti]
+`uio_in[0]` hanya mereset domain write dan `uio_in[1]` hanya domain read
+(`tt_um_pa1mantri_cdc_fifo.sv:44-45`, `cdc_fifo.sv:51-91`). Kalau hanya satu
+sisi yang direset saat FIFO berisi, pointer di sisi lain tetap di nilai lama.
+
+Bukti (lewat pin TT; 6 item ditulis lalu 2 dibaca sebelum reset; data dibatasi
+ke bit 0 agar tidak tercampur F1):
+- **Reset domain write saja:** sisi read tetap `empty=0` dan **30 item basi**
+  terbaca dari slot memori yang tidak berlaku lagi.
+- **Reset domain read saja:** 6 item terbaca lagi, termasuk 2 yang **sudah
+  dibaca sebelumnya** (duplikasi).
+- Test: `test_top_write_domain_reset_empties_fifo`,
+  `test_top_read_domain_reset_empties_fifo`.
 - **Status:** diperbaiki di `rtl/cdc_fifo/` (SEGEL); baseline tetap apa adanya.
   Lihat `docs/cdc_fifo.md`.
 

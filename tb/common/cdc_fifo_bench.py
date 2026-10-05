@@ -277,3 +277,75 @@ async def fill_from(dut, pre):
     ra = int(port.fifo.read_address.value)
     assert ra == pre % (1 << ADDR_W), f"persiapan gagal: read_address={ra}, harusnya {pre % (1 << ADDR_W)}"
     return accepted, int(port.full.value), int(port.empty.value), int(port.fifo.write_address.value)
+
+
+FRESH = (0xA, 0xB, 0xC)
+
+
+async def single_domain_reset(dut, domain, mask=0xF):
+    """Isi FIFO lewat pin TT, lalu reset HANYA satu domain lewat pin uio-nya.
+
+    Mengembalikan pengamatan: flag segera setelah reset, isi yang masih bisa
+    dibaca sebelum write baru, dan hasil baca setelah 3 write baru (FRESH).
+    Perilaku yang benar: FIFO kosong di kedua sisi, tidak ada data lama yang
+    terbaca, dan tepat 3 item baru kembali berurutan.
+
+    `mask` membatasi bit data yang ditulis. Audit baseline memakai mask=0x1
+    agar hasilnya tidak tercampur dengan F1 (bit data 1-3 hilang).
+    """
+    await init(dut)
+    port = Port(dut, "top")
+    cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
+    cocotb.start_soon(Clock(port.rclk, 23, units="ns").start())
+    await reset(port, 10, 23)
+
+    async def write(v):
+        await FallingEdge(port.wclk)
+        port.winc.value = 1
+        port.wdata.value = v
+        await FallingEdge(port.wclk)
+        port.winc.value = 0
+
+    async def drain(limit=40):
+        got = []
+        for _ in range(limit):
+            await FallingEdge(port.rclk)
+            if int(port.empty.value):
+                break
+            got.append(int(port.rdata.value))
+            port.rinc.value = 1
+            await FallingEdge(port.rclk)
+            port.rinc.value = 0
+        return got
+
+    for v in range(1, 7):
+        await write(v & mask)
+    await Timer(200, units="ns")
+    first = []
+    for _ in range(2):  # konsumsi 2 item -> pointer read = 2, isi = 4
+        await FallingEdge(port.rclk)
+        first.append(int(port.rdata.value))
+        port.rinc.value = 1
+        await FallingEdge(port.rclk)
+        port.rinc.value = 0
+    await Timer(200, units="ns")
+
+    pin = dut.t_wrst_n if domain == "write" else dut.t_rrst_n
+    pin.value = 0
+    await Timer(100, units="ns")
+    pin.value = 1
+    await Timer(300, units="ns")
+    after = {"empty": int(port.empty.value), "full": int(port.full.value)}
+    stale = await drain()
+    for v in FRESH:
+        await write(v & mask)
+    await Timer(300, units="ns")
+    fresh = await drain()
+    return {"sebelum": first, "flag_setelah_reset": after, "terbaca_sebelum_write_baru": stale,
+            "terbaca_setelah_write_baru": fresh, "mask": mask}
+
+
+def single_domain_reset_ok(obs):
+    return (obs["flag_setelah_reset"] == {"empty": 1, "full": 0}
+            and obs["terbaca_sebelum_write_baru"] == []
+            and obs["terbaca_setelah_write_baru"] == [v & obs["mask"] for v in FRESH])

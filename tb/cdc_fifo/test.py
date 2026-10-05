@@ -16,7 +16,7 @@ from cocotb.triggers import FallingEdge, ReadOnly, RisingEdge, Timer
 from cocotb.utils import get_sim_time
 
 from cdc_fifo_bench import (CAPACITY, Port, assert_clean, fill_from, gray, init, reset,
-                            run_random)
+                            run_random, single_domain_reset, single_domain_reset_ok)
 
 
 # --- F3: full benar di semua posisi pointer ---------------------------------
@@ -324,3 +324,61 @@ async def test_top_reset_paths_use_synchronizer(dut):
         assert int(f.write_reset_sync.value) == 1 and int(f.read_reset_sync.value) == 1
         await Timer(100, units="ns")
         assert int(f.write_reset_sync.value) == 0 and int(f.read_reset_sync.value) == 0
+
+
+# --- reset satu domain (F6) -----------------------------------------------------
+
+@cocotb.test()
+async def test_top_write_domain_reset_empties_fifo(dut):
+    """F6: reset hanya lewat uio_in[0] (domain write) mengosongkan seluruh FIFO."""
+    obs = await single_domain_reset(dut, "write")
+    dut._log.info("%s", obs)
+    assert single_domain_reset_ok(obs), obs
+
+
+@cocotb.test()
+async def test_top_read_domain_reset_empties_fifo(dut):
+    """F6: reset hanya lewat uio_in[1] (domain read) mengosongkan seluruh FIFO."""
+    obs = await single_domain_reset(dut, "read")
+    dut._log.info("%s", obs)
+    assert single_domain_reset_ok(obs), obs
+
+
+@cocotb.test()
+async def test_reset_release_order_is_safe(dut):
+    """F6: kalau clock read berhenti saat reset dilepas, domain write keluar dari
+    reset lebih dulu dan menulis; setelah clock read berjalan, semua data utuh."""
+    await init(dut)
+    port = Port(dut, "core")
+    cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
+    rc = cocotb.start_soon(Clock(port.rclk, 23, units="ns").start())
+    await reset(port, 10, 23)
+    f = port.fifo
+    rc.kill()
+    dut.c_wrst.value = 1  # reset lewat pin domain write saja
+    await Timer(50, units="ns")
+    dut.c_wrst.value = 0
+    await Timer(100, units="ns")
+    assert int(f.write_reset_sync.value) == 0, "domain write tidak keluar dari reset"
+    assert int(f.read_reset_sync.value) == 1, "domain read harus tetap reset tanpa clock"
+    sent = [3, 1, 4, 1, 5, 9, 2, 6]
+    for v in sent:
+        await FallingEdge(port.wclk)
+        port.winc.value = 1
+        port.wdata.value = v
+        await RisingEdge(port.wclk)
+        assert int(port.full.value) == 0
+    await FallingEdge(port.wclk)
+    port.winc.value = 0
+    cocotb.start_soon(Clock(port.rclk, 23, units="ns").start())
+    await Timer(300, units="ns")
+    got = []
+    for _ in range(len(sent) + 2):
+        await FallingEdge(port.rclk)
+        if int(port.empty.value):
+            break
+        got.append(int(port.rdata.value))
+        port.rinc.value = 1
+        await FallingEdge(port.rclk)
+        port.rinc.value = 0
+    assert got == sent, (got, sent)

@@ -15,7 +15,7 @@ from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, Timer
 
 from cdc_fifo_bench import (CAPACITY, Port, assert_clean, fill_from, init, reset,
-                            run_random, summary)
+                            run_random, single_domain_reset, single_domain_reset_ok, summary)
 
 REPORT = os.path.join(os.getcwd(), "audit_cdc_fifo.json")
 
@@ -127,3 +127,21 @@ async def test_top_rst_n_resets_fifo(dut):
     await Timer(100, units="ns")
     save("rst_n_global", {"empty_setelah_rst_n": int(port.empty.value)})
     assert int(port.empty.value) == 1, "FIFO tidak kosong setelah rst_n"
+
+
+@cocotb.test(expect_fail=True)  # F6
+async def test_top_write_domain_reset_empties_fifo(dut):
+    """Reset hanya lewat uio_in[0] (domain write) mengosongkan seluruh FIFO.
+    Data dibatasi ke bit 0 agar kegagalan tidak berasal dari F1."""
+    obs = await single_domain_reset(dut, "write", mask=0x1)
+    save("reset_hanya_domain_write", obs)
+    assert single_domain_reset_ok(obs), obs
+
+
+@cocotb.test(expect_fail=True)  # F6
+async def test_top_read_domain_reset_empties_fifo(dut):
+    """Reset hanya lewat uio_in[1] (domain read) mengosongkan seluruh FIFO.
+    Data dibatasi ke bit 0 agar kegagalan tidak berasal dari F1."""
+    obs = await single_domain_reset(dut, "read", mask=0x1)
+    save("reset_hanya_domain_read", obs)
+    assert single_domain_reset_ok(obs), obs
