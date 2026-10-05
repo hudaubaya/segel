@@ -18,3 +18,6 @@ audit_*.json
 
 # Netlist hasil sintesis (make cdc_fifo-cyclonev)
 build/
+
+# Tabel siklus yang ditulis test Ascon (tb/ascon)
+ascon_cycles.json

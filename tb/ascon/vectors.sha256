@@ -1,0 +1,4 @@
+0c5baffbab9000cd2329c1a2670f4d480e4e184c52e49f9c785f9baebeb15b1b  acvp/Ascon-AEAD128-SP800-232/internalProjection.json
+66efeb34ae67c8ea01ef2fade03d9c61c3fc46a4a5c0a75cb5bb11627e66a983  acvp/Ascon-XOF128-SP800-232/internalProjection.json
+bbbc34692fe05e5fda0a3b025585622ab3e3747495e5e3655b29aae8c2a4bd33  ascon-c/LWC_AEAD_KAT_128_128.txt
+d7f5a23f37fc969896e48246700bc859fa324f2d309164043361376068e30852  ascon-c/LWC_XOF_KAT_128_512.txt
