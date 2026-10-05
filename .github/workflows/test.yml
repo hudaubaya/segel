@@ -31,6 +31,12 @@ jobs:
           path: .cache/sky130_fd_sc_hd
           key: sky130-sc-hd-${{ hashFiles('Makefile', 'rtl/baseline/*/gl/*.v') }}
 
+      - name: Cache Ascon test vectors
+        uses: actions/cache@v4
+        with:
+          path: .cache/ascon-vectors
+          key: ascon-vectors-${{ hashFiles('tb/ascon/vectors.sha256') }}
+
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
@@ -46,6 +52,10 @@ jobs:
             rtl/baseline/*/test/results.xml
             rtl/baseline/*/test/tb.vcd
             tb/*/results_*.xml
+            tb/ascon/results.xml
+            tb/ascon/ascon_cycles.json
+            build/ascon_mutants/*/results.xml
+            build/ascon_mutants/*/sim.log
             tb/audit/*/results*.xml
             tb/audit/*/audit_*.json
           if-no-files-found: ignore

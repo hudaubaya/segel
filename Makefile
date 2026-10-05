@@ -1,9 +1,10 @@
 # Makefile utama SEGEL — menjalankan seluruh test dari root repo.
 #
 #   make test                      semua test (model, RTL, gate-level, baseline, audit)
-#   make test-<nama>               satu target: model crc8 crc8-gl cdc_fifo baseline-<b> audit audit-<a>
-#                                  (struktur CDC butuh yosys)
+#   make test-<nama>               satu target: model crc8 crc8-gl cdc_fifo ascon ascon-mutants
+#                                  baseline-<b> audit audit-<a> (struktur CDC butuh yosys)
 #   make sky130-cells              unduh model sel sky130_fd_sc_hd untuk simulasi GL
+#   make ascon-vectors             unduh vektor uji resmi Ascon (ACVP NIST + KAT ascon-c)
 #   make clean                     hapus artefak simulasi (cache sel tidak ikut)
 #
 # Makefile cocotb memakai $(PWD), jadi kita `cd` dulu, bukan `make -C`.
@@ -29,6 +30,21 @@ GL_CELLS         := $(shell grep -ohE '^ *sky130_fd_sc_hd__[a-z0-9]+_[0-9]+' $(G
 GL_CELLS_HASH    := $(shell echo $(GL_CELLS) | md5sum | cut -c1-8)
 SKY130_STAMP     := $(SKY130_SC_HD)/.segel-rev-$(SKY130_SC_HD_REV)-$(GL_CELLS_HASH)
 
+# Vektor uji resmi Ascon (docs/ascon.md), dikunci ke commit + SHA-256.
+ACVP_SERVER_REV  := 975de31eb83d87039ec88934fdc47d8c312b892d
+ASCON_C_REV      := 446347f21b209f3921c65ece70027c366cbe1693
+ASCON_VEC_SUMS   := tb/ascon/vectors.sha256
+export ASCON_VECTORS ?= $(CURDIR)/.cache/ascon-vectors
+ASCON_VEC_STAMP  := $(ASCON_VECTORS)/.segel-$(shell md5sum < $(ASCON_VEC_SUMS) | cut -c1-8)
+ACVP_RAW         := https://raw.githubusercontent.com/usnistgov/ACVP-Server/$(ACVP_SERVER_REV)/gen-val/json-files
+ASCON_C_RAW      := https://raw.githubusercontent.com/ascon/ascon-c/$(ASCON_C_REV)
+# <path lokal>=<URL>
+ASCON_VEC_FILES  := \
+  acvp/Ascon-AEAD128-SP800-232/internalProjection.json=$(ACVP_RAW)/Ascon-AEAD128-SP800-232/internalProjection.json \
+  acvp/Ascon-XOF128-SP800-232/internalProjection.json=$(ACVP_RAW)/Ascon-XOF128-SP800-232/internalProjection.json \
+  ascon-c/LWC_AEAD_KAT_128_128.txt=$(ASCON_C_RAW)/crypto_aead/asconaead128/LWC_AEAD_KAT_128_128.txt \
+  ascon-c/LWC_XOF_KAT_128_512.txt=$(ASCON_C_RAW)/crypto_hash/asconxof128/LWC_XOF_KAT_128_512.txt
+
 # Audit baseline (docs/baseline_audit.md)
 AUDITS           := serdes cdc_fifo
 AUDITS_GL        := serdes cdc_fifo
@@ -42,7 +58,8 @@ define check_results
 	  echo "PASS $(2)"
 endef
 
-.PHONY: help test test-model test-crc8 test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline \
+.PHONY: help test test-model test-crc8 test-ascon test-ascon-model test-ascon-mutants test-ascon-synth \
+        ascon-vectors test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline \
         test-cdc_fifo-meta test-sync_meta test-cdc_fifo-cyclonev test-cdc_fifo-cyclonev-struct \
         cdc_fifo-cyclonev \
         test-audit test-audit-struct-cdc_fifo sky130-cells clean \
@@ -53,11 +70,50 @@ help:
 	@sed -n '3,7p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
 test: test-model test-crc8 test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-cdc_fifo-meta \
-      test-sync_meta test-cdc_fifo-cyclonev test-cdc_fifo-cyclonev-struct test-baseline test-audit
+      test-sync_meta test-cdc_fifo-cyclonev test-cdc_fifo-cyclonev-struct \
+      test-ascon-model test-ascon test-ascon-mutants test-ascon-synth test-baseline test-audit
 
 test-model:
 	@$(PYTHON) model/crc8.py
 	@$(PYTHON) model/enc8b10b.py
+	@$(PYTHON) model/ascon.py
+
+# Ascon-AEAD128 / Ascon-XOF128 (rtl/ascon_core.v, docs/ascon.md)
+test-ascon-model: $(ASCON_VEC_STAMP)
+	@echo "==> ascon (golden model vs vektor resmi)"
+	@$(PYTHON) model/ascon.py
+	@$(PYTHON) tb/ascon/check_model.py
+
+test-ascon: $(ASCON_VEC_STAMP)
+	@echo "==> ascon (RTL, vektor resmi + acak + tag salah + siklus)"
+	@cd tb/ascon && rm -f results.xml && $(MAKE) --no-print-directory SIM=$(SIM)
+	$(call check_results,tb/ascon/results.xml,ascon)
+
+# Tiga mutan (konstanta ronde, rotasi linear, perbandingan tag) harus membuat test gagal.
+test-ascon-mutants: $(ASCON_VEC_STAMP)
+	@echo "==> ascon (uji mutasi)"
+	@$(PYTHON) tb/ascon/mutants.py
+
+# RTL harus bisa disintesis (Yosys, gerbang generik) tanpa masalah struktural.
+test-ascon-synth:
+	@echo "==> ascon (sintesis Yosys)"
+	@mkdir -p build/ascon
+	@yosys -q -l build/ascon/synth.log -p "read_verilog rtl/ascon_core.v; synth -top ascon_core; \
+	  check -assert; tee -q -o build/ascon/stat.txt stat"
+	@sed -n '/Number of cells/p' build/ascon/stat.txt
+	@echo "PASS ascon-synth"
+
+ascon-vectors: $(ASCON_VEC_STAMP)
+
+$(ASCON_VEC_STAMP): $(ASCON_VEC_SUMS)
+	@echo "==> unduh vektor uji Ascon (ACVP-Server @ $(ACVP_SERVER_REV), ascon-c @ $(ASCON_C_REV))"
+	rm -rf $(ASCON_VECTORS)
+	@set -e; for e in $(ASCON_VEC_FILES); do \
+	  f=$(ASCON_VECTORS)/$${e%%=*}; mkdir -p $$(dirname $$f); \
+	  curl -fsSL --retry 3 -o $$f "$${e#*=}"; \
+	done
+	cd $(ASCON_VECTORS) && sha256sum --quiet -c $(CURDIR)/$(ASCON_VEC_SUMS)
+	touch $@
 
 test-crc8:
 	@echo "==> crc8 (RTL SEGEL)"
@@ -189,3 +245,4 @@ clean:
 	@rm -rf tb/cdc_fifo/{sim_build,results.xml,results_meta.xml,tb.vcd,__pycache__} tb/common/__pycache__
 	@rm -rf tb/sync_meta/{sim_build,results.xml,results_meta.xml,__pycache__}
 	@rm -rf tb/cdc_fifo_cv/{sim_build,results.xml,tb.vcd,__pycache__} build
+	@rm -rf tb/ascon/{sim_build,results.xml,ascon_cycles.json,__pycache__}
