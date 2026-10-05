@@ -1,7 +1,7 @@
 # Makefile utama SEGEL — menjalankan seluruh test dari root repo.
 #
 #   make test                      semua test (model, RTL, gate-level, baseline, audit)
-#   make test-<nama>               satu target: model crc8 crc8-gl baseline-<b> audit audit-<a>
+#   make test-<nama>               satu target: model crc8 crc8-gl cdc_fifo baseline-<b> audit audit-<a>
 #   make sky130-cells              unduh model sel sky130_fd_sc_hd untuk simulasi GL
 #   make clean                     hapus artefak simulasi (cache sel tidak ikut)
 #
@@ -41,14 +41,14 @@ define check_results
 	  echo "PASS $(2)"
 endef
 
-.PHONY: help test test-model test-crc8 test-crc8-gl test-baseline test-audit sky130-cells clean \
+.PHONY: help test test-model test-crc8 test-crc8-gl test-cdc_fifo test-baseline test-audit sky130-cells clean \
         $(addprefix test-baseline-,$(BASELINES) crc8_0901) \
         $(addprefix test-audit-,$(AUDITS)) $(addprefix test-audit-gl-,$(AUDITS_GL)) test-audit-gl-gray
 
 help:
 	@sed -n '3,7p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
-test: test-model test-crc8 test-crc8-gl test-baseline test-audit
+test: test-model test-crc8 test-crc8-gl test-cdc_fifo test-baseline test-audit
 
 test-model:
 	@$(PYTHON) model/crc8.py
@@ -65,6 +65,12 @@ test-crc8-gl: $(SKY130_STAMP)
 	@cd tb/crc8 && rm -f results_gl.xml && \
 	  $(MAKE) --no-print-directory SIM=$(SIM) GATES=yes SKY130_SC_HD=$(SKY130_SC_HD)
 	$(call check_results,tb/crc8/results_gl.xml,crc8-gl)
+
+# CDC FIFO SEGEL (rtl/cdc_fifo/): turunan #0036 dengan perbaikan F1 dan F3.
+test-cdc_fifo:
+	@echo "==> cdc_fifo (RTL SEGEL)"
+	@cd tb/cdc_fifo && rm -f results.xml && $(MAKE) --no-print-directory SIM=$(SIM)
+	$(call check_results,tb/cdc_fifo/results.xml,cdc_fifo)
 
 test-baseline: $(addprefix test-baseline-,$(BASELINES) crc8_0901)
 
@@ -128,3 +134,4 @@ clean:
 	  rm -rf tb/audit/$$a/{sim_build,results.xml,tb.vcd,__pycache__,audit_$$a.json}; \
 	done
 	@rm -rf tb/audit/gl/{sim_build,results_*.xml,__pycache__}
+	@rm -rf tb/cdc_fifo/{sim_build,results.xml,tb.vcd,__pycache__} tb/common/__pycache__
