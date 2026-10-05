@@ -3,6 +3,9 @@
 Ketiga baseline di `rtl/baseline/` diuji **apa adanya** dengan cocotb: tanpa
 satu baris pun diubah, pada commit yang di-tapeout (lihat `docs/baselines.md`).
 Tidak ada yang diperbaiki di sini; dokumen ini hanya mencatat temuan.
+Perbaikan dibuat di salinan SEGEL yang terpisah, sementara baseline tetap apa
+adanya. Saat ini F1 dan F3 sudah diperbaiki di `rtl/cdc_fifo/` (lihat
+[`docs/cdc_fifo.md`](cdc_fifo.md)).
 
 ## Ringkasan
 
@@ -226,6 +229,8 @@ berasal dari pin `ui_in[0]` dan `ui_in[2]`.
   tersambung. Menulis 0..15 lalu membacanya kembali menghasilkan
   `0,1,0,1,…`.
 - Test: `test_top_random_ratios_4bit`, `test_gl_data_4bit`.
+- **Status:** diperbaiki di `rtl/cdc_fifo/` (SEGEL); baseline tetap apa adanya.
+  Lihat `docs/cdc_fifo.md`.
 
 **F3 — `full` tidak naik saat pointer read tersinkron = 0; 32 data hilang
 tanpa tanda.** [Pasti]
@@ -250,6 +255,8 @@ Bukti:
   akhir uji ada 96 item yang tidak terbaca.
 - Test: `test_core_capacity_after_reset`, `test_core_random_ratios`,
   `test_gl_capacity_after_reset`.
+- **Status:** diperbaiki di `rtl/cdc_fifo/` (SEGEL); baseline tetap apa adanya.
+  Lihat `docs/cdc_fifo.md`.
 
 ### Yang tidak ada / catatan
 

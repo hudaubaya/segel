@@ -3,7 +3,7 @@
 ## Struktur
 
 ```
-rtl/                 RTL SEGEL (rtl/crc8/: CRC-8, lihat docs/crc8.md)
+rtl/                 RTL SEGEL (rtl/crc8/: CRC-8, docs/crc8.md; rtl/cdc_fifo/: CDC FIFO, docs/cdc_fifo.md)
 rtl/baseline/        Baseline TT07 yang disalin apa adanya (lihat docs/baselines.md)
 tb/                  Testbench cocotb untuk RTL SEGEL
 model/               Model referensi
