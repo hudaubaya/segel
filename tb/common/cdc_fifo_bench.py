@@ -14,6 +14,7 @@ Pemeriksaan:
     setiap nilai pasca-sinkronisasi adalah nilai Gray yang pernah ada.
 """
 
+import os
 import random
 from collections import deque
 
@@ -22,7 +23,9 @@ from cocotb.clock import Clock
 from cocotb.triggers import Edge, FallingEdge, RisingEdge, Timer
 
 ADDR_W = 5
-CAPACITY = (1 << ADDR_W) - 1  # pointer tanpa bit wrap: satu slot tak terpakai
+# Kapasitas baseline #0036: pointer tanpa bit wrap, satu slot tak terpakai (F4).
+# Salinan SEGEL (dengan bit wrap) memakai 1 << ADDR_W; teruskan lewat `capacity`.
+CAPACITY = (1 << ADDR_W) - 1
 def gray(n):
     return n ^ (n >> 1)
 
@@ -50,7 +53,7 @@ class Port:
 
 
 class Bench:
-    def __init__(self, port, seed, data_mask=0xF, max_fill=None):
+    def __init__(self, port, seed, data_mask=0xF, max_fill=None, capacity=CAPACITY):
         self.p = port
         self.rng = random.Random(seed)
         self.mask = data_mask
@@ -61,6 +64,7 @@ class Bench:
         self.pw = self.pr = 0.5
         self.running = True
         self.max_occ = 0
+        self.capacity = capacity
         # Batas isi dari sisi test (None = tanpa batas). Dipakai untuk menguji
         # FIFO di luar kondisi batas F3.
         self.max_fill = max_fill
@@ -87,7 +91,7 @@ class Bench:
             inc, full = int(p.winc.value), int(p.full.value)
             data = int(p.wdata.value)
             self.full_seen += full
-            if len(self.q) >= CAPACITY and not full:
+            if len(self.q) >= self.capacity and not full:
                 self.err(f"t={cocotb.utils.get_sim_time('ns'):.0f}ns isi={len(self.q)} tapi full=0")
             if inc and not full:
                 # Data yang tercatat = data di pin; wrapper bisa membuang bit.
@@ -156,17 +160,23 @@ class GrayMon:
         cocotb.start_soon(self.watch_post(f.read_address_gray_postsync, "r"))
 
 
+INIT_VALUES = {
+    "clk": 0, "rst_n": 1, "ena": 1,
+    "t_wclk": 0, "t_winc": 0, "t_rclk": 0, "t_rinc": 0, "t_wdata": 0,
+    "t_wrst_n": 1, "t_rrst_n": 1,
+    "c_wclk": 0, "c_winc": 0, "c_rclk": 0, "c_rinc": 0, "c_wdata": 0,
+    "c_wrst": 0, "c_rrst": 0,
+}
+
+
 async def init(dut):
-    dut.clk.value = 0
-    dut.rst_n.value = 1
-    dut.ena.value = 1
-    for n in ("t_wclk", "t_winc", "t_rclk", "t_rinc", "t_wdata",
-              "c_wclk", "c_winc", "c_rclk", "c_rinc", "c_wdata"):
-        getattr(dut, n).value = 0
-    dut.t_wrst_n.value = 1
-    dut.t_rrst_n.value = 1
-    dut.c_wrst.value = 0
-    dut.c_rrst.value = 0
+    # Toplevel netlist (tb/cdc_fifo_cv) hanya punya sinyal c_*; sinyal lain dilewati.
+    for name, value in INIT_VALUES.items():
+        try:
+            getattr(dut, name).value = value
+        except AttributeError:
+            if name.startswith("c_"):
+                raise
     await Timer(1, units="ns")
 
 
@@ -182,18 +192,23 @@ PROFILES = [(0.5, 0.5), (0.9, 0.2), (0.2, 0.9), (1.0, 1.0), (0.7, 0.0), (0.0, 0.
 
 
 async def run_random(dut, which, seed, segments, edges_per_segment, data_mask=0xF,
-                     max_fill=None):
+                     max_fill=None, capacity=CAPACITY, gray_monitor=True):
     await init(dut)
     port = Port(dut, which)
     rng = random.Random(seed)
-    bench = Bench(port, seed + 1, data_mask, max_fill)
-    gm = GrayMon(port.fifo)
+    bench = Bench(port, seed + 1, data_mask, max_fill, capacity)
+    # Netlist gate-level tidak punya sinyal internal: monitor Gray dimatikan.
+    # CDC_GRAY_MONITOR=0 juga mematikannya (dipakai mutation check agar hanya
+    # scoreboard yang menilai, lihat docs/cdc_fifo.md).
+    gray_monitor = gray_monitor and os.environ.get("CDC_GRAY_MONITOR", "1") != "0"
+    gm = GrayMon(port.fifo) if gray_monitor else GrayMon(None)
 
     # Reset dengan clock berjalan
     wc = cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
     rc = cocotb.start_soon(Clock(port.rclk, 13, units="ns").start())
     await reset(port, 10, 13)
-    gm.start()
+    if gray_monitor:
+        gm.start()
     for co in (bench.write_mon(), bench.read_mon(), bench.writer(), bench.reader()):
         cocotb.start_soon(co)
 
@@ -214,7 +229,7 @@ async def run_random(dut, which, seed, segments, edges_per_segment, data_mask=0x
 
     # Kuras: hentikan write, baca sampai habis
     bench.pw, bench.pr = 0.0, 1.0
-    await Timer(4 * (CAPACITY + 4) * 120, units="ns")
+    await Timer(4 * (capacity + 4) * 120, units="ns")
     bench.running = False
     leftover = len(bench.q)
     wc.kill()
@@ -236,12 +251,13 @@ def summary(bench, gm, ratios, leftover):
 
 
 def assert_clean(bench, gm, left, expect_full_reached):
+    capacity = bench.capacity
     assert not bench.errors, bench.errors[:5]
     assert not gm.bad, gm.bad[:5]
     assert left == 0, f"{left} data tertinggal setelah kuras"
     assert bench.writes == bench.reads
     if expect_full_reached:
-        assert bench.max_occ == CAPACITY, f"isi maks {bench.max_occ}, harusnya {CAPACITY}"
+        assert bench.max_occ == capacity, f"isi maks {bench.max_occ}, harusnya {capacity}"
         assert bench.full_seen > 0
     assert bench.empty_seen > 0
 
@@ -274,9 +290,14 @@ async def fill_from(dut, pre):
     await FallingEdge(port.wclk)
     port.winc.value = 0
     await Timer(200, units="ns")
-    ra = int(port.fifo.read_address.value)
-    assert ra == pre % (1 << ADDR_W), f"persiapan gagal: read_address={ra}, harusnya {pre % (1 << ADDR_W)}"
-    return accepted, int(port.full.value), int(port.empty.value), int(port.fifo.write_address.value)
+    try:  # sinyal internal tidak ada di netlist gate-level
+        ra = int(port.fifo.read_address.value)
+        wa = int(port.fifo.write_address.value)
+    except AttributeError:
+        ra = wa = None
+    if ra is not None:
+        assert ra == pre % (1 << ADDR_W), f"persiapan gagal: read_address={ra}, harusnya {pre % (1 << ADDR_W)}"
+    return accepted, int(port.full.value), int(port.empty.value), wa
 
 
 FRESH = (0xA, 0xB, 0xC)

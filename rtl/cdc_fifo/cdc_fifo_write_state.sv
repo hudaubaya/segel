@@ -1,6 +1,7 @@
 // Diturunkan dari TT07 #0036 (Pa1mantri/tt07_cdc_fifo @ ff14afce,
 // src/cdc_fifo_write_state.sv), Apache-2.0. Perubahan oleh SEGEL:
-//   - F3: perbandingan full memakai pointer berikutnya selebar ADDRESS_WIDTH
+//   - F3: pointer berikutnya dihitung dengan lebar eksplisit
+//   - F4: pointer punya bit wrap (ADDRESS_WIDTH+1 bit), kapasitas 2^ADDRESS_WIDTH
 //   - F5: pointer Gray diregister, bukan dibentuk kombinasional dari biner
 // Lihat docs/cdc_fifo.md dan docs/baseline_audit.md.
 
@@ -10,49 +11,55 @@ module cdc_fifo_write_state #(
   input logic clock,
   input logic reset,
   input logic increment,
-  input logic [ADDRESS_WIDTH-1:0] read_address_gray,
+  input logic [ADDRESS_WIDTH:0] read_pointer_gray,     // tersinkron, dari domain read
 
-  output logic [ADDRESS_WIDTH-1:0] write_address,
-  output logic [ADDRESS_WIDTH-1:0] write_address_gray,
+  output logic [ADDRESS_WIDTH-1:0] write_address,      // alamat RAM
+  output logic [ADDRESS_WIDTH:0] write_pointer_gray,   // ke synchronizer domain read
   output logic full
 );
 
-  // F3: pointer berikutnya dihitung dengan lebar ADDRESS_WIDTH agar membungkus
-  // ke 0. Dengan literal 1 tak berukuran, penjumlahan dihitung 32 bit sehingga
-  // 31 + 1 = 32 != 0 dan full tidak pernah naik saat pointer read = 0.
-  logic [ADDRESS_WIDTH-1:0] write_address_next;
-  assign write_address_next = write_address + 1'b1;
-  assign full = (write_address_next == read_address);
+  // F4: pointer ADDRESS_WIDTH+1 bit. Bit teratas adalah bit wrap: kalau bit
+  // wrap berbeda dan bit sisanya sama, writer sudah satu putaran di depan
+  // reader, artinya FIFO penuh dengan 2^ADDRESS_WIDTH item (semua slot terpakai).
+  logic [ADDRESS_WIDTH:0] write_pointer;
+  logic [ADDRESS_WIDTH:0] read_pointer;
 
-  logic [ADDRESS_WIDTH-1:0] read_address;
+  assign write_address = write_pointer[ADDRESS_WIDTH-1:0];
 
   gray_to_binary #(
-    .WIDTH(ADDRESS_WIDTH)
-  ) read_addr_decode (
-    .gray(read_address_gray),
-    .binary(read_address)
+    .WIDTH(ADDRESS_WIDTH + 1)
+  ) read_ptr_decode (
+    .gray(read_pointer_gray),
+    .binary(read_pointer)
   );
+
+  assign full = (write_pointer[ADDRESS_WIDTH] != read_pointer[ADDRESS_WIDTH]) &&
+                (write_pointer[ADDRESS_WIDTH-1:0] == read_pointer[ADDRESS_WIDTH-1:0]);
+
+  // F3: lebar penjumlahan eksplisit (tanpa literal 32 bit).
+  logic [ADDRESS_WIDTH:0] write_pointer_next;
+  assign write_pointer_next = write_pointer + 1'b1;
 
   // F5: Gray dihitung dari pointer BERIKUTNYA lalu diregister bersama pointer
   // biner. Yang menyeberang ke domain read hanya keluaran flop, sehingga tidak
   // ada glitch kombinasional di masukan synchronizer. Nilainya di setiap siklus
-  // sama dengan gray(write_address).
-  logic [ADDRESS_WIDTH-1:0] write_address_gray_next;
+  // sama dengan gray(write_pointer).
+  logic [ADDRESS_WIDTH:0] write_pointer_gray_next;
 
   binary_to_gray #(
-    .WIDTH(ADDRESS_WIDTH)
-  ) write_addr_encode (
-    .binary(write_address_next),
-    .gray(write_address_gray_next)
+    .WIDTH(ADDRESS_WIDTH + 1)
+  ) write_ptr_encode (
+    .binary(write_pointer_next),
+    .gray(write_pointer_gray_next)
   );
 
   always_ff @ (posedge clock or posedge reset) begin
     if (reset) begin
-      write_address      <= 0;
-      write_address_gray <= 0;
+      write_pointer      <= 0;
+      write_pointer_gray <= 0;
     end else if (increment & !full) begin
-      write_address      <= write_address_next;
-      write_address_gray <= write_address_gray_next;
+      write_pointer      <= write_pointer_next;
+      write_pointer_gray <= write_pointer_gray_next;
     end
   end
 

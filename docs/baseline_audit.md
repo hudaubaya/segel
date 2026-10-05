@@ -4,7 +4,7 @@ Ketiga baseline di `rtl/baseline/` diuji **apa adanya** dengan cocotb: tanpa
 satu baris pun diubah, pada commit yang di-tapeout (lihat `docs/baselines.md`).
 Tidak ada yang diperbaiki di sini; dokumen ini hanya mencatat temuan.
 Perbaikan dibuat di salinan SEGEL yang terpisah, sementara baseline tetap apa
-adanya. Saat ini F1, F2, F3, F5, F6, dan sinkronisasi reset sudah diperbaiki di
+adanya. Saat ini F1–F6 dan sinkronisasi reset sudah diperbaiki di
 `rtl/cdc_fifo/` (lihat
 [`docs/cdc_fifo.md`](cdc_fifo.md)).
 
@@ -285,6 +285,8 @@ ke bit 0 agar tidak tercampur F1):
 - **F4 — Kapasitas 31, bukan 32.** [Pasti] Pointer tidak punya bit wrap,
   sehingga satu slot selalu kosong. Ini pilihan desain yang valid, tetapi tidak
   didokumentasikan.
+  **Status:** diubah di `rtl/cdc_fifo/` (SEGEL): pointer dengan bit wrap,
+  kapasitas 32; baseline tetap apa adanya.
 - **F5 — Pointer Gray dibentuk kombinasional dari register biner**
   (`binary_to_gray`, `cdc_fifo_write_state.sv:25-30`,
   `cdc_fifo_read_state.sv:23-28`) dan langsung masuk ke flop pertama

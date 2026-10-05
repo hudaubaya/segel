@@ -43,6 +43,8 @@ define check_results
 endef
 
 .PHONY: help test test-model test-crc8 test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline \
+        test-cdc_fifo-meta test-sync_meta test-cdc_fifo-cyclonev test-cdc_fifo-cyclonev-struct \
+        cdc_fifo-cyclonev \
         test-audit test-audit-struct-cdc_fifo sky130-cells clean \
         $(addprefix test-baseline-,$(BASELINES) crc8_0901) \
         $(addprefix test-audit-,$(AUDITS)) $(addprefix test-audit-gl-,$(AUDITS_GL)) test-audit-gl-gray
@@ -50,7 +52,8 @@ endef
 help:
 	@sed -n '3,7p' $(firstword $(MAKEFILE_LIST)) | sed 's/^# \{0,1\}//'
 
-test: test-model test-crc8 test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline test-audit
+test: test-model test-crc8 test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-cdc_fifo-meta \
+      test-sync_meta test-cdc_fifo-cyclonev test-cdc_fifo-cyclonev-struct test-baseline test-audit
 
 test-model:
 	@$(PYTHON) model/crc8.py
@@ -74,7 +77,42 @@ test-cdc_fifo:
 	@cd tb/cdc_fifo && rm -f results.xml && $(MAKE) --no-print-directory SIM=$(SIM)
 	$(call check_results,tb/cdc_fifo/results.xml,cdc_fifo)
 
-# F5 + reset: pointer Gray lintas domain langsung dari flop, dan setiap flop
+# Test yang sama dengan model metastabilitas di synchronizer (`ifdef METASTABILITY_SIM).
+test-cdc_fifo-meta:
+	@echo "==> cdc_fifo (RTL SEGEL, model metastabilitas)"
+	@cd tb/cdc_fifo && rm -f results_meta.xml && $(MAKE) --no-print-directory SIM=$(SIM) META=1
+	$(call check_results,tb/cdc_fifo/results_meta.xml,cdc_fifo-meta)
+
+# Uji unit model metastabilitas synchronizer, tanpa dan dengan model.
+test-sync_meta:
+	@echo "==> synchronizer (model metastabilitas, unit)"
+	@cd tb/sync_meta && rm -f results.xml results_meta.xml && \
+	  $(MAKE) --no-print-directory SIM=$(SIM) && $(MAKE) --no-print-directory SIM=$(SIM) META=1
+	$(call check_results,tb/sync_meta/results.xml,sync_meta)
+	$(call check_results,tb/sync_meta/results_meta.xml,sync_meta-meta)
+
+# Netlist Cyclone V (Yosys synth_intel_alm, sel MISTRAL_*; bukan Quartus).
+CV_NETLIST := build/cyclonev/cdc_fifo_cyclonev.v
+CV_SOURCES := $(wildcard rtl/cdc_fifo/*.sv) fpga/cdc_fifo/synth_cyclonev.ys
+cdc_fifo-cyclonev: $(CV_NETLIST)
+
+$(CV_NETLIST): $(CV_SOURCES)
+	@echo "==> sintesis cdc_fifo untuk Cyclone V (Yosys)"
+	@mkdir -p build/cyclonev
+	@yosys -q -l build/cyclonev/synth.log fpga/cdc_fifo/synth_cyclonev.ys
+	@sed -n '/Number of cells/,/^$$/p' build/cyclonev/cdc_fifo_cyclonev_stat.txt
+
+test-cdc_fifo-cyclonev: $(CV_NETLIST)
+	@echo "==> cdc_fifo (netlist Cyclone V)"
+	@cd tb/cdc_fifo_cv && rm -f results.xml && \
+	  $(MAKE) --no-print-directory SIM=$(SIM) NETLIST=$(CURDIR)/$(CV_NETLIST)
+	$(call check_results,tb/cdc_fifo_cv/results.xml,cdc_fifo-cyclonev)
+
+test-cdc_fifo-cyclonev-struct:
+	@echo "==> cdc_fifo (struktur synchronizer, netlist Cyclone V)"
+	@$(PYTHON) tb/struct/check_cdc_regs.py --src rtl/cdc_fifo --target cyclonev --gray registered --reset synced
+
+
 # ber-reset memakai reset tersinkron domainnya (sintesis Yosys).
 test-cdc_fifo-struct:
 	@echo "==> cdc_fifo (struktur synchronizer, Yosys)"
@@ -148,4 +186,6 @@ clean:
 	  rm -rf tb/audit/$$a/{sim_build,results.xml,tb.vcd,__pycache__,audit_$$a.json}; \
 	done
 	@rm -rf tb/audit/gl/{sim_build,results_*.xml,__pycache__}
-	@rm -rf tb/cdc_fifo/{sim_build,results.xml,tb.vcd,__pycache__} tb/common/__pycache__
+	@rm -rf tb/cdc_fifo/{sim_build,results.xml,results_meta.xml,tb.vcd,__pycache__} tb/common/__pycache__
+	@rm -rf tb/sync_meta/{sim_build,results.xml,results_meta.xml,__pycache__}
+	@rm -rf tb/cdc_fifo_cv/{sim_build,results.xml,tb.vcd,__pycache__} build

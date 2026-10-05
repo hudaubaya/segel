@@ -6,6 +6,8 @@
 //     deassert sinkron ke clock domain itu)
 //   - F6: reset dari domain mana pun mereset KEDUA domain, sehingga pointer
 //     kedua sisi tidak pernah tidak konsisten
+//   - F4: pointer lintas domain ADDRESS_WIDTH+1 bit (dengan bit wrap), sehingga
+//     kapasitas penuh 2^ADDRESS_WIDTH
 // Lihat docs/cdc_fifo.md.
 
 //`include "dpram.sv"
@@ -36,11 +38,11 @@ module cdc_fifo #(
 
   wire write_enable;
   wire [ADDRESS_WIDTH-1:0] write_address;
-  wire [ADDRESS_WIDTH-1:0] write_address_gray_presync;
-  wire [ADDRESS_WIDTH-1:0] write_address_gray_postsync;
+  wire [ADDRESS_WIDTH:0] write_address_gray_presync;   // F4: + bit wrap
+  wire [ADDRESS_WIDTH:0] write_address_gray_postsync;
   wire [ADDRESS_WIDTH-1:0] read_address;
-  wire [ADDRESS_WIDTH-1:0] read_address_gray_presync;
-  wire [ADDRESS_WIDTH-1:0] read_address_gray_postsync;
+  wire [ADDRESS_WIDTH:0] read_address_gray_presync;
+  wire [ADDRESS_WIDTH:0] read_address_gray_postsync;
 
   assign write_enable = (!full & write_increment);
 
@@ -87,9 +89,9 @@ module cdc_fifo #(
     .clock(write_clock),
     .reset(write_reset_sync),
     .increment(write_increment),
-    .read_address_gray(read_address_gray_postsync),
+    .read_pointer_gray(read_address_gray_postsync),
     .write_address(write_address),
-    .write_address_gray(write_address_gray_presync),
+    .write_pointer_gray(write_address_gray_presync),
     .full(full)
   );
 
@@ -99,14 +101,14 @@ module cdc_fifo #(
    .clock(read_clock),
    .reset(read_reset_sync),
    .increment(read_increment),
-   .write_address_gray(write_address_gray_postsync),
+   .write_pointer_gray(write_address_gray_postsync),
    .read_address(read_address),
-   .read_address_gray(read_address_gray_presync),
+   .read_pointer_gray(read_address_gray_presync),
    .empty(empty)
   );
 
   synchronizer #(
-    .WIDTH(ADDRESS_WIDTH)
+    .WIDTH(ADDRESS_WIDTH + 1)
   ) write_address_sync (
     .clock(read_clock),
     .reset(read_reset_sync),
@@ -115,7 +117,7 @@ module cdc_fifo #(
   );
 
   synchronizer #(
-    .WIDTH(ADDRESS_WIDTH)
+    .WIDTH(ADDRESS_WIDTH + 1)
   ) read_address_sync (
     .clock(write_clock),
     .reset(write_reset_sync),
