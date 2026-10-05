@@ -24,3 +24,6 @@ ascon_cycles.json
 
 # Ringkasan injeksi galat yang ditulis test PHY (tb/phy)
 phy_bit_errors.json
+
+# CSV/JSON simulasi BER (tb/fpga_loopback)
+ber_sim_*

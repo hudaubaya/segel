@@ -9,17 +9,18 @@ rtl/                 RTL SEGEL (rtl/crc8/: CRC-8, docs/crc8.md; rtl/cdc_fifo/: C
 rtl/baseline/        Baseline TT07 yang disalin apa adanya (lihat docs/baselines.md)
 tb/                  Testbench cocotb untuk RTL SEGEL
 model/               Model referensi
-fpga/phy_loopback/   Desain FPGA uji loopback PHY
+fpga/phy_loopback/   Uji loopback PHY di DE10-Nano (Quartus, System Console; docs/phy_howto.md)
 fpga/release/        Build FPGA rilis
 fpga/cdc_fifo/       Sintesis CDC FIFO untuk Cyclone V (Yosys)
-sw/                  Perangkat lunak host
+sw/                  Perangkat lunak host (sw/ber.py: analisis BER)
 docs/                Dokumentasi
 ```
 
 ## Menjalankan test
 
 Butuh Icarus Verilog (diuji dengan 12.0), Yosys (diuji dengan 0.33, untuk
-pemeriksaan struktur CDC FIFO) dan Python 3.11.
+pemeriksaan struktur dan sintesis), Tcl 8.6 (`tclsh`, untuk test skrip FPGA dengan
+mock) dan Python 3.11. Quartus dan papan tidak dibutuhkan untuk `make test`.
 
 ```sh
 python3 -m venv .venv && . .venv/bin/activate

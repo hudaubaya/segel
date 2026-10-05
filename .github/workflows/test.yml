@@ -18,10 +18,10 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
-      - name: Install Icarus Verilog and Yosys
+      - name: Install Icarus Verilog, Yosys and Tcl
         run: |
           sudo apt-get update
-          sudo apt-get install -y iverilog yosys
+          sudo apt-get install -y iverilog yosys tcl
           iverilog -V | head -n 1
           yosys -V
 
@@ -57,6 +57,8 @@ jobs:
             tb/phy/results.xml
             tb/phy/phy_bit_errors.json
             tb/phy_units/results.xml
+            tb/fpga_loopback/results_sel*.xml
+            tb/fpga_loopback/ber_sim_*.csv
             build/ascon_mutants/*/results.xml
             build/ascon_mutants/*/sim.log
             tb/audit/*/results*.xml

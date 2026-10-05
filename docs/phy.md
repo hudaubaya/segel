@@ -210,3 +210,5 @@ dijaga oleh `test_align_false_comma` (terbukti gagal pada aligner lama) dan syar
   lolos dengan peluang ±1/256 per frame rusak, kecuali bila 8b/10b menandainya lebih
   dulu.
 - Belum ada wrapper Tiny Tapeout (pinout) untuk PHY.
+- Uji di FPGA (DE10-Nano, clock diteruskan lewat DDIO, SDC, sweep BER):
+  [`docs/phy_howto.md`](phy_howto.md). Belum ada hasil papan.

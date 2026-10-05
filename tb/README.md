@@ -12,4 +12,7 @@ Testbench cocotb untuk RTL SEGEL (`rtl/`), satu subdirektori per blok. Testbench
 - `tb/phy/` — PHY serial (`rtl/phy/`): loopback dua PHY (geseran bit, rasio clock,
   injeksi galat bit, batas laju); `tb/phy_units/` — 8b/10b exhaustive dan comma aligner;
   lihat `docs/phy.md`
+- `tb/fpga_loopback/` — simulasi top FPGA DE10-Nano (`fpga/phy_loopback`) dengan model
+  PLL/DDIO/JTAG; `tb/fpga_scripts/` — SDC, proyek Quartus, dan skrip System Console di
+  `tclsh` dengan mock (lihat `docs/phy_howto.md`)
 - `tb/common/` — file bersama: stub sel fisik untuk simulasi GL dan bench CDC FIFO
