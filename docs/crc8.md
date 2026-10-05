@@ -22,7 +22,7 @@ bukan dengan deskripsi di `docs/info.md` upstream.
 
 | File | Isi |
 |---|---|
-| `rtl/crc8/crc8.v` | Inti CRC-8, parameter `POLY`/`INIT` |
+| `rtl/crc8/crc8.v` | Inti CRC-8, parameter `POLY`/`INIT`; port `clr` (clear sinkron ke `INIT`, prioritas di atas `en`) dipakai framer/deframer PHY (`docs/phy.md`), diikat 0 di wrapper TT |
 | `rtl/crc8/tt_um_aduhayabu_crc8.v` | Wrapper Tiny Tapeout, pinout sama dengan #0901 |
 | `model/crc8.py` | Model referensi Python + self-test |
 | `tb/crc8/` | Testbench cocotb untuk RTL **dan** netlist baseline |

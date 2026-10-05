@@ -92,6 +92,41 @@ def _build_decode():
 DECODE = _build_decode()
 
 
+def _build_legal():
+    """{rd: {kode: (byte, k)}}: kode yang sah bila diterima pada RD tersebut."""
+    legal = {-1: {}, 1: {}}
+    for rd in (-1, 1):
+        for b in range(256):
+            legal[rd][encode(b, rd)[0]] = (b, False)
+        for x, y in K_CODES:
+            legal[rd][encode(x | (y << 5), rd, k=True)[0]] = (x | (y << 5), True)
+    return legal
+
+
+LEGAL = _build_legal()
+
+
+def decode(code: int, rd: int):
+    """Dekode satu kode 10 bit pada running disparity `rd`.
+
+    Kembalikan (byte, k, illegal, disp_err, rd_baru):
+      - kode sah pada `rd`: byte/k hasil dekode, kedua flag 0
+      - kode hanya sah pada RD lawan: galat disparity; byte/k dari RD lawan
+      - kode tidak ada di tabel mana pun: illegal; byte/k = None
+    RD baru mengikuti disparity kode yang diterima (tidak berubah kalau 0), juga
+    untuk kode yang salah, supaya penerima pulih sendiri.
+    """
+    d = disparity(code)
+    rd_next = rd if d == 0 else (1 if d > 0 else -1)
+    if code in LEGAL[rd]:
+        b, k = LEGAL[rd][code]
+        return b, k, False, False, rd_next
+    if code in LEGAL[-rd]:
+        b, k = LEGAL[-rd][code]
+        return b, k, False, True, rd_next
+    return None, None, True, False, rd_next
+
+
 def code_str(code: int) -> str:
     s = f"{code:010b}"
     return f"{s[:6]} {s[6:]}"
@@ -129,6 +164,18 @@ def _self_test() -> None:
         bits += f"{code:010b}"
     assert "000000" not in bits and "111111" not in bits
     assert "0011111" not in bits and "1100000" not in bits
+    # Dekoder: 268 kode sah per RD (256 data + 12 K), invers encoder, flag benar
+    assert len(LEGAL[-1]) == len(LEGAL[1]) == 268
+    for rd in (-1, 1):
+        for b in range(256):
+            code, nrd = encode(b, rd)
+            assert decode(code, rd) == (b, False, False, False, nrd)
+        for x, y in K_CODES:
+            code, nrd = encode(x | (y << 5), rd, k=True)
+            assert decode(code, rd) == (x | (y << 5), True, False, False, nrd)
+    assert decode(0b0000000000, -1)[2] and decode(0b1111111111, 1)[2]
+    d121 = encode(0x21, -1)[0]                  # D.1.1 bentuk RD-, diterima di RD+
+    assert decode(d121, 1)[:4] == (0x21, False, False, True)
     # K28.5 memuat comma
     assert "0011111" in f"{encode(K28_5, -1, k=True)[0]:010b}"
     print("model/enc8b10b.py: OK")

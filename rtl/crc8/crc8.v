@@ -12,6 +12,7 @@ module crc8 #(
 ) (
     input  wire       clk,
     input  wire       rst_n,  // reset asinkron, aktif rendah: crc <= INIT
+    input  wire       clr,    // 1 = crc <= INIT pada tepi naik berikutnya (prioritas di atas en)
     input  wire       en,     // 1 = serap din pada tepi naik clk berikutnya
     input  wire [7:0] din,
     output reg  [7:0] crc
@@ -31,6 +32,8 @@ module crc8 #(
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n)
+      crc <= INIT;
+    else if (clr)
       crc <= INIT;
     else if (en)
       crc <= crc8_next(crc, din);

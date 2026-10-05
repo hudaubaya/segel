@@ -6,7 +6,8 @@ Tidak ada yang diperbaiki di sini; dokumen ini hanya mencatat temuan.
 Perbaikan dibuat di salinan SEGEL yang terpisah, sementara baseline tetap apa
 adanya. Saat ini F1–F6 dan sinkronisasi reset sudah diperbaiki di
 `rtl/cdc_fifo/` (lihat
-[`docs/cdc_fifo.md`](cdc_fifo.md)).
+[`docs/cdc_fifo.md`](cdc_fifo.md)). Temuan SerDes S1–S14 ditangani di PHY baru
+`rtl/phy/` (lihat [`docs/phy.md`](phy.md)).
 
 ## Ringkasan
 

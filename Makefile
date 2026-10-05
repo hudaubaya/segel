@@ -2,7 +2,7 @@
 #
 #   make test                      semua test (model, RTL, gate-level, baseline, audit)
 #   make test-<nama>               satu target: model crc8 crc8-gl cdc_fifo ascon ascon-mutants
-#                                  baseline-<b> audit audit-<a> (struktur CDC butuh yosys)
+#                                  phy phy-units baseline-<b> audit audit-<a> (struktur butuh yosys)
 #   make sky130-cells              unduh model sel sky130_fd_sc_hd untuk simulasi GL
 #   make ascon-vectors             unduh vektor uji resmi Ascon (ACVP NIST + KAT ascon-c)
 #   make clean                     hapus artefak simulasi (cache sel tidak ikut)
@@ -59,7 +59,7 @@ define check_results
 endef
 
 .PHONY: help test test-model test-crc8 test-ascon test-ascon-model test-ascon-mutants test-ascon-synth \
-        ascon-vectors test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline \
+        ascon-vectors test-phy test-phy-units test-phy-synth test-phy-fifo-struct test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline \
         test-cdc_fifo-meta test-sync_meta test-cdc_fifo-cyclonev test-cdc_fifo-cyclonev-struct \
         cdc_fifo-cyclonev \
         test-audit test-audit-struct-cdc_fifo sky130-cells clean \
@@ -71,7 +71,8 @@ help:
 
 test: test-model test-crc8 test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-cdc_fifo-meta \
       test-sync_meta test-cdc_fifo-cyclonev test-cdc_fifo-cyclonev-struct \
-      test-ascon-model test-ascon test-ascon-mutants test-ascon-synth test-baseline test-audit
+      test-ascon-model test-ascon test-ascon-mutants test-ascon-synth \
+      test-phy-units test-phy test-phy-synth test-phy-fifo-struct test-baseline test-audit
 
 test-model:
 	@$(PYTHON) model/crc8.py
@@ -104,6 +105,33 @@ test-ascon-synth:
 	@echo "PASS ascon-synth"
 
 ascon-vectors: $(ASCON_VEC_STAMP)
+
+# PHY serial (rtl/phy/, docs/phy.md)
+REPO_ROOT := $(CURDIR)
+include rtl/phy/sources.mk
+
+test-phy-units:
+	@echo "==> phy (unit: 8b/10b exhaustive, comma aligner)"
+	@cd tb/phy_units && rm -f results.xml && $(MAKE) --no-print-directory SIM=$(SIM)
+	$(call check_results,tb/phy_units/results.xml,phy-units)
+
+test-phy:
+	@echo "==> phy (loopback dua PHY: geseran bit, rasio clock, galat bit, batas laju)"
+	@cd tb/phy && rm -f results.xml && $(MAKE) --no-print-directory SIM=$(SIM)
+	$(call check_results,tb/phy/results.xml,phy)
+
+test-phy-synth:
+	@echo "==> phy (sintesis Yosys)"
+	@mkdir -p build/phy
+	@yosys -q -l build/phy/synth.log -p "read_verilog -sv -I rtl/phy $(PHY_SOURCES); \
+	  synth -flatten -top phy; check -assert; tee -q -o build/phy/stat.txt stat"
+	@sed -n '/Number of cells/p' build/phy/stat.txt
+	@echo "PASS phy-synth"
+
+# CDC FIFO yang dipakai PHY: DATA_WIDTH = 9 (8 data + flag K)
+test-phy-fifo-struct:
+	@echo "==> cdc_fifo 9 bit (struktur synchronizer, Yosys)"
+	@$(PYTHON) tb/struct/check_cdc_regs.py --src rtl/cdc_fifo --data-width 9 --gray registered --reset synced
 
 $(ASCON_VEC_STAMP): $(ASCON_VEC_SUMS)
 	@echo "==> unduh vektor uji Ascon (ACVP-Server @ $(ACVP_SERVER_REV), ascon-c @ $(ASCON_C_REV))"
@@ -246,3 +274,4 @@ clean:
 	@rm -rf tb/sync_meta/{sim_build,results.xml,results_meta.xml,__pycache__}
 	@rm -rf tb/cdc_fifo_cv/{sim_build,results.xml,tb.vcd,__pycache__} build
 	@rm -rf tb/ascon/{sim_build,results.xml,ascon_cycles.json,__pycache__}
+	@rm -rf tb/phy/{sim_build,results.xml,phy_bit_errors.json,__pycache__} tb/phy_units/{sim_build,results.xml,__pycache__}

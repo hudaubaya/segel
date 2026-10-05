@@ -21,3 +21,6 @@ build/
 
 # Tabel siklus yang ditulis test Ascon (tb/ascon)
 ascon_cycles.json
+
+# Ringkasan injeksi galat yang ditulis test PHY (tb/phy)
+phy_bit_errors.json

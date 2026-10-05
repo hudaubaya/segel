@@ -21,6 +21,7 @@ module tt_um_aduhayabu_crc8 (
   crc8 u_crc8 (
       .clk  (clk),
       .rst_n(rst_n),
+      .clr  (1'b0),
       .en   (uio_in[0]),
       .din  (ui_in),
       .crc  (uo_out)

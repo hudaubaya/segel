@@ -9,4 +9,7 @@ Testbench cocotb untuk RTL SEGEL (`rtl/`), satu subdirektori per blok. Testbench
   `serdes/`, `cdc_fifo/` (RTL) dan `gl/` (netlist tapeout, level pin)
 - `tb/ascon/` — Ascon-AEAD128/XOF128 (`rtl/ascon_core.v`): vektor resmi, acak vs model,
   tag salah, siklus, dan uji mutasi (`mutants.py`); lihat `docs/ascon.md`
+- `tb/phy/` — PHY serial (`rtl/phy/`): loopback dua PHY (geseran bit, rasio clock,
+  injeksi galat bit, batas laju); `tb/phy_units/` — 8b/10b exhaustive dan comma aligner;
+  lihat `docs/phy.md`
 - `tb/common/` — file bersama: stub sel fisik untuk simulasi GL dan bench CDC FIFO
