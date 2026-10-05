@@ -9,6 +9,7 @@ tb/                  Testbench cocotb untuk RTL SEGEL
 model/               Model referensi
 fpga/phy_loopback/   Desain FPGA uji loopback PHY
 fpga/release/        Build FPGA rilis
+fpga/cdc_fifo/       Sintesis CDC FIFO untuk Cyclone V (Yosys)
 sw/                  Perangkat lunak host
 docs/                Dokumentasi
 ```
@@ -24,7 +25,8 @@ pip install -r requirements.txt
 make test
 ```
 
-Simulasi gate-level mengunduh model sel sky130 (±4 MB) ke `.cache/` saat
+Netlist Cyclone V dibangkitkan ke `build/` oleh Yosys. Simulasi gate-level
+sky130 mengunduh model sel (±4 MB) ke `.cache/` saat
 pertama kali dijalankan, jadi butuh akses ke github.com. `make help`
 menampilkan target lain. CI (`.github/workflows/test.yml`)
 menjalankan `make test` di setiap pull request dan push ke `main`.

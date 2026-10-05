@@ -1,0 +1,15 @@
+# Sintesis inti CDC FIFO SEGEL untuk Intel Cyclone V dengan Yosys.
+# Dijalankan dari root repo: `make cdc_fifo-cyclonev` (keluaran di build/cyclonev/).
+#
+# Ini netlist Yosys (sel MISTRAL_*), BUKAN hasil Quartus: tanpa place & route
+# dan tanpa timing. -noiopad/-noclkbuf karena FIFO ini inti yang ditanam di
+# desain FPGA yang lebih besar, bukan top-level chip.
+
+read_verilog -sv rtl/cdc_fifo/cdc_fifo.sv rtl/cdc_fifo/dpram.sv
+read_verilog -sv rtl/cdc_fifo/cdc_fifo_read_state.sv rtl/cdc_fifo/cdc_fifo_write_state.sv
+read_verilog -sv rtl/cdc_fifo/binary_to_gray.sv rtl/cdc_fifo/gray_to_binary.sv
+read_verilog -sv rtl/cdc_fifo/synchronizer.sv rtl/cdc_fifo/reset_synchronizer.sv
+chparam -set DATA_WIDTH 4 -set ADDRESS_WIDTH 5 cdc_fifo
+synth_intel_alm -family cyclonev -noiopad -noclkbuf -top cdc_fifo
+tee -o build/cyclonev/cdc_fifo_cyclonev_stat.txt stat
+write_verilog -noattr build/cyclonev/cdc_fifo_cyclonev.v

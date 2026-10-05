@@ -15,3 +15,6 @@ results_*.xml
 
 # Ringkasan audit yang ditulis test (tb/audit/*)
 audit_*.json
+
+# Netlist hasil sintesis (make cdc_fifo-cyclonev)
+build/

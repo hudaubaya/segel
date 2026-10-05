@@ -1,77 +1,200 @@
 # CDC FIFO (`rtl/cdc_fifo/`)
 
 Salinan SEGEL dari baseline TT07 #0036 (`Pa1mantri/tt07_cdc_fifo` @
-`ff14afce`, Apache-2.0) dengan perbaikan temuan **F1, F2, F3, F5, dan F6**, serta **sinkronisasi reset**,
-dari [`docs/baseline_audit.md`](baseline_audit.md). Baseline di
-`rtl/baseline/cdc_fifo_0036/` tidak diubah; audit-nya tetap menguji perilaku
-aslinya.
+`ff14afce`, Apache-2.0). Isinya:
+- perbaikan temuan **F1–F6** dan **sinkronisasi reset** dari
+  [`docs/baseline_audit.md`](baseline_audit.md);
+- **model metastabilitas** khusus simulasi;
+- **netlist Intel Cyclone V** yang ikut diuji.
+
+Baseline di `rtl/baseline/cdc_fifo_0036/` tidak diubah; audit-nya tetap menguji
+perilaku aslinya.
 
 ## Perubahan terhadap baseline
 
 Lihat `diff -ru rtl/baseline/cdc_fifo_0036/src rtl/cdc_fifo`. Setiap file yang
 diubah diberi header yang mencatat asal dan perubahannya, sesuai Apache-2.0
-§4(b). File lainnya disalin byte-per-byte.
+§4(b). `reset_synchronizer.sv` adalah file baru milik SEGEL.
 
 | Temuan | File | Sebelum | Sesudah |
 |---|---|---|---|
 | — | `tt_um_aduhayabu_cdc_fifo.sv` | `module tt_um_pa1mantri_cdc_fifo` | `module tt_um_aduhayabu_cdc_fifo` |
 | F1 | `tt_um_aduhayabu_cdc_fifo.sv` | `assign write_data = ui_in[4];` | `assign write_data = ui_in[7:4];` |
 | F2 | `tt_um_aduhayabu_cdc_fifo.sv` | `write_reset = !uio_in[0]` (dan `read_reset` serupa) | `write_reset = !uio_in[0] \| !rst_n` (dan `read_reset` serupa) |
-| F3 | `cdc_fifo_write_state.sv` | `full = (write_address + 1 == read_address)` | `write_address_next = write_address + 1'b1;` (selebar `ADDRESS_WIDTH`), lalu `full = (write_address_next == read_address)` |
-| F5 | `cdc_fifo_write_state.sv`, `cdc_fifo_read_state.sv` | Gray = `binary_to_gray(pointer)` kombinasional, langsung ke synchronizer | Gray = `binary_to_gray(pointer_next)` diregister bersama pointer biner; synchronizer hanya melihat keluaran flop |
-| F6 | `cdc_fifo.sv` | `uio_in[0]` hanya mereset domain write, `uio_in[1]` hanya domain read | Kedua synchronizer reset menerima `write_reset \| read_reset`, sehingga pin reset mana pun mereset kedua domain |
-| Reset | `cdc_fifo.sv`, `reset_synchronizer.sv` (baru) | Reset pin langsung ke semua flop, dilepas asinkron | Setiap domain lewat `reset_synchronizer` 2 tahap: assert asinkron, deassert sinkron ke clock domain itu |
+| F3 | `cdc_fifo_write_state.sv` | `full = (write_address + 1 == read_address)`, dihitung 32 bit | Penjumlahan pointer selebar eksplisit (`write_pointer + 1'b1` ke wire berukuran) |
+| F4 | `cdc_fifo_write_state.sv`, `cdc_fifo_read_state.sv`, `cdc_fifo.sv` | Pointer `ADDRESS_WIDTH` bit; `full` saat `wa + 1 == ra`, sehingga kapasitas 31 | Pointer `ADDRESS_WIDTH + 1` bit dengan bit wrap; `full` saat bit wrap beda dan bit lain sama, sehingga kapasitas **32** |
+| F5 | `cdc_fifo_write_state.sv`, `cdc_fifo_read_state.sv` | Gray = `binary_to_gray(pointer)` kombinasional, langsung ke synchronizer | Gray = `binary_to_gray(pointer_next)` diregister bersama pointer biner |
+| F6 | `cdc_fifo.sv` | `uio_in[0]` hanya mereset domain write, `uio_in[1]` hanya domain read | Kedua synchronizer reset menerima `write_reset \| read_reset` |
+| Reset | `cdc_fifo.sv`, `reset_synchronizer.sv` | Reset pin langsung ke semua flop, dilepas asinkron | `reset_synchronizer` 2 tahap per domain: assert asinkron, deassert sinkron |
+| Model | `synchronizer.sv`, `reset_synchronizer.sv` | — | Model metastabilitas di balik `` `ifdef METASTABILITY_SIM``; hardware yang disintesis tidak berubah |
 
 Pinout sama dengan baseline (`info.yaml` #0036). Kini `ui[4..7]` benar-benar
 menjadi `write_data0..3`, dan `rst_n` mereset seluruh FIFO.
 
-**Perbedaan perilaku dari datasheet #0036 (F6):** pin `uio[0]`
-("write_reset") dan `uio[1]` ("read_reset") masing-masing kini mereset
-**seluruh** FIFO, bukan hanya domainnya sendiri. Kalau yang direset hanya satu
-sisi, isinya pasti tidak konsisten, jadi tidak ada cara aman untuk
-mempertahankan perilaku lama.
-
-`reset_synchronizer.sv` adalah file baru milik SEGEL, bukan turunan baseline.
+**Perbedaan perilaku dari datasheet #0036:**
+- **F4:** FIFO kini menampung **32** item, bukan 31.
+- **F6:** pin `uio[0]` ("write_reset") dan `uio[1]` ("read_reset") masing-masing
+  mereset **seluruh** FIFO, bukan hanya domainnya sendiri. Mereset satu sisi saja
+  pasti membuat isinya tidak konsisten, jadi tidak ada cara aman untuk
+  mempertahankan perilaku lama.
 
 ### Catatan desain
 
+- **F4 memakai pointer dengan bit wrap (pola Cummings).** Kedua pointer lebarnya
+  `ADDRESS_WIDTH + 1` bit; RAM dialamatkan dengan `ADDRESS_WIDTH` bit bawah.
+  - **`full`:** bit wrap berbeda dan bit sisanya sama, artinya writer tepat satu
+    putaran di depan reader.
+  - **`empty`:** seluruh pointer sama.
+  - **Konsekuensi:** pointer Gray yang menyeberang domain dan kedua synchronizer
+    pointer bertambah 1 bit (5 → 6). Total sel `synth` Yosys naik 449 → 478.
 - **F2 mempertahankan pin reset `uio`.** `rst_n` ditambahkan dengan OR ke pin
   `uio_in[0]`/`uio_in[1]`; sejak F6, ketiganya mereset seluruh FIFO. Semua
-  reset asinkron aktif rendah. Konsekuensinya, reset yang masuk ke synchronizer
-  adalah keluaran gerbang OR, bukan pin langsung. Glitch pada OR bisa memicu
-  reset palsu (assert-nya asinkron), tetapi hanya kalau beberapa masukan
-  berubah bersamaan. [Kemungkinan Besar] dapat diterima untuk reset yang
-  dikendalikan manusia atau MCU.
+  reset asinkron aktif rendah.
+  - Reset yang masuk ke synchronizer adalah keluaran gerbang OR, bukan pin
+    langsung. Glitch pada OR bisa memicu reset palsu (assert-nya asinkron),
+    tetapi hanya kalau beberapa masukan berubah bersamaan.
+  - [Kemungkinan Besar] dapat diterima untuk reset yang dikendalikan manusia
+    atau MCU.
 - **F5 mengubah struktur, bukan perilaku.** Register Gray diisi
   `gray(pointer + 1)` pada tepi yang sama ketika pointer biner naik, jadi di
-  setiap siklus nilainya sama dengan `gray(pointer)`, sama seperti sebelumnya.
-  Semua test fungsional memberi angka identik sebelum dan sesudah F5 (mis.
-  3.123 item dan `full` teramati 5.016 kali pada `test_core_random_ratios`).
-  Biayanya 8 flop tambahan menurut `synth` Yosys (18 flop pointer dengan
-  enable, sebelumnya 10; total sel 433 → 445). Register Gray 5 bit per domain,
-  tetapi MSB Gray sama dengan MSB biner sehingga Yosys menggabungkannya.
+  setiap siklus nilainya sama dengan `gray(pointer)`. Ketika F5 diterapkan,
+  semua test fungsional memberi angka identik sebelum dan sesudahnya. Biayanya
+  8 flop (sel 433 → 445).
 - **F6 digabung di dalam `cdc_fifo`, sebelum reset synchronizer.** Reset
   gabungan masuk ke kedua domain secara asinkron, lalu dilepas sinkron ke clock
-  masing-masing, sehingga kedua domain bisa keluar dari reset pada waktu
-  berbeda. Urutan apa pun aman: domain yang masih reset menahan pointer-nya
-  (dan pointer Gray yang dikirimnya) di 0, dan itu konsisten dengan FIFO kosong
-  yang dilihat domain lain. Hal ini diuji dengan clock read yang dihentikan
-  saat reset dilepas (`test_reset_release_order_is_safe`).
+  masing-masing.
+  - Urutan pelepasan apa pun aman: domain yang masih reset menahan pointer-nya
+    (dan pointer Gray yang dikirimnya) di 0, dan itu konsisten dengan FIFO
+    kosong di domain lain.
+  - Ini diuji dengan clock read yang dihentikan saat reset dilepas
+    (`test_reset_release_order_is_safe`), dan dengan model metastabilitas yang
+    mengacak waktu pelepasan.
 - **Sinkronisasi reset ada di dalam `cdc_fifo`, bukan di wrapper.** Jadi inti
-  FIFO aman dipakai sendiri, dan `rst_n` maupun pin `uio` sama-sama
-  melewatinya. Assert tetap asinkron: FIFO langsung masuk reset walaupun clock
-  berhenti. Deassert terjadi tepat di tepi naik ke-2 clock domain itu. Kalau
-  clock domain berhenti, domain itu tetap dalam reset sampai clock berjalan
-  lagi; ini disengaja, karena tanpa clock state tidak bisa berubah. Biayanya
-  4 flop (`$_DFF_PP1_`, total sel 445 → 449).
-- **F3 memakai wire berukuran, bukan cukup `+ 1'b1`.** Kedua cara memberi hasil
-  5 bit, tetapi wire yang lebarnya dideklarasikan eksplisit tidak bergantung
-  pada aturan lebar ekspresi Verilog. Wire yang sama dipakai juga oleh F5.
+  FIFO aman dipakai sendiri, termasuk di FPGA.
+  - **Assert** tetap asinkron: FIFO langsung masuk reset walaupun clock berhenti.
+  - **Deassert** terjadi tepat di tepi naik ke-2 clock domain itu.
+  - **Kalau clock domain berhenti,** domain itu tetap dalam reset sampai clock
+    berjalan lagi.
+  - Biayanya 4 flop (sel 445 → 449).
+
+## Model metastabilitas (`` `ifdef METASTABILITY_SIM``)
+
+Simulasi RTL biasa bersifat zero-delay: flop selalu menangkap nilai yang benar,
+dan latensi synchronizer selalu tepat 2 siklus. Model ini menambahkan
+ketidakpastian yang ada di hardware sungguhan.
+
+- **`synchronizer.sv`:** bit yang masukannya berubah dalam jendela
+  `META_WINDOW_NS` sebelum tepi clock tujuan dianggap metastabil. Bit itu
+  resolve acak (50%) ke nilai baru atau nilai lama. Kalau ke nilai lama, nilai
+  baru baru masuk di tepi berikutnya.
+- **`reset_synchronizer.sv`:** kalau reset dilepas dalam jendela sebelum tepi
+  clock, pelepasannya bisa mundur satu siklus secara acak.
+- **Asumsi:**
+  - tahap kedua synchronizer selalu stabil (resolusi selesai dalam satu siklus,
+    yaitu asumsi MTBF synchronizer 2 flop);
+  - hanya bit yang berubah di dalam jendela yang terpengaruh.
+
+  Jendela default 1 ns jauh lebih lebar dari jendela fisik (orde ps). Lebar itu
+  sengaja dipilih supaya kejadiannya cukup sering untuk diuji, bukan untuk
+  meniru silikon.
+- **Pengaturan:** plusarg `+META_WINDOW_NS=<ns>` dan `+META_SEED=<n>`. Dari
+  `make`, gunakan `META=1 META_WINDOW_NS=... META_SEED=...`. Penghitung
+  `events` dan `delayed` di setiap instance bisa dibaca testbench.
+- **Sintesis:** tanpa define, kodenya sama dengan sebelumnya, sehingga struktur
+  hasil sintesis identik.
+
+### Apa yang ditunjukkan model ini
+
+**Unit test synchronizer** (`make test-sync_meta`, `tb/sync_meta/`). Masukan 4
+bit diganti 0,2–0,8 ns sebelum tepi clock, sebanyak 200 kali per kasus:
+
+| Transisi | Tanpa model | Dengan model |
+|---|---|---|
+| Biner multi-bit (mis. `0111 → 1000`), dekat tepi | 200/200 nilai baru | 10 baru, 14 lama, **176 campuran yang tidak pernah ada di sumber** |
+| Gray (1 bit), dekat tepi | 200/200 baru | 97 baru, 103 lama, **0 campuran** |
+| Biner, jauh dari tepi (5–9 ns) | 200/200 baru | 200/200 baru |
+
+Jadi model ini memang menghasilkan inkoherensi multi-bit, dan pengkodean Gray
+memang mencegahnya.
+
+**FIFO dengan model aktif** (`make test-cdc_fifo-meta`). Ke-17 test fungsional
+dijalankan ulang dengan model aktif, ditambah `test_metastability_model_active`,
+dan semuanya lulus.
+- **Synchronizer pointer:** model aktif di keduanya, dan scoreboard serta
+  monitor Gray tetap bersih.
+  - Selama `test_metastability_model_active` saja: pointer write 86 kejadian
+    (34 resolve ke nilai lama), pointer read 64 kejadian (32 ke nilai lama).
+  - Sepanjang seluruh run ke-18 test: 394/189 dan 339/171.
+  - Penghitung di RTL kumulatif, dan `$urandom` dipakai bersama oleh semua
+    test. Jadi angka-angka ini hanya berlaku untuk run penuh
+    `make test-cdc_fifo-meta` dengan seed default; test yang dipilih lewat
+    `TESTCASE` memberi angka berbeda.
+- **Reset synchronizer:** pada `test_reset_deassert_synchronous`, 7 dari 120
+  pelepasan mundur satu siklus (test ini menerima 3 tepi hanya kalau pelepasan
+  jatuh di dalam jendela).
+
+**Yang TIDAK ditunjukkan model ini.** Mutasi klasik "pointer biner menyeberang
+domain" **tidak** membuat scoreboard gagal, baik dengan maupun tanpa model.
+Monitor Gray sengaja dimatikan lewat `CDC_GRAY_MONITOR=0` dalam percobaan ini.
+- **Alasan [Kemungkinan Besar]:** nilai pointer yang salah hanya bertahan satu
+  siklus, dan hanya muncul saat pointer sedang berubah. Pada saat itu minimal
+  satu item sungguh ada atau satu slot sungguh kosong, dan FIFO hanya menulis
+  atau membaca satu item per siklus.
+- **Akibatnya:** di desain ini, penjaga pengkodean Gray adalah monitor Gray
+  (`GrayMon`) dan pemeriksaan struktur, bukan scoreboard dengan model
+  metastabilitas.
+
+## Netlist Cyclone V (`make cdc_fifo-cyclonev`)
+
+`fpga/cdc_fifo/synth_cyclonev.ys` mensintesis inti `cdc_fifo` (DATA_WIDTH=4,
+ADDRESS_WIDTH=5) dengan `synth_intel_alm -family cyclonev -noiopad -noclkbuf`.
+Keluarannya ada di `build/cyclonev/` (tidak di-commit; dibangkitkan ulang dari
+RTL).
+
+| Sel | Jumlah |
+|---|---|
+| `MISTRAL_FF` | 52 |
+| `MISTRAL_ALUT2/4/5/6` | 10 / 4 / 6 / 3 |
+| `MISTRAL_ALUT_ARITH` | 12 |
+| `MISTRAL_NOT` | 4 |
+| `MISTRAL_MLAB` (RAM 32×4) | 4 |
+| **Total** | **95** |
+
+- **`-noiopad -noclkbuf`:** FIFO ini adalah inti yang ditanam di desain FPGA
+  yang lebih besar, misalnya di DE10-Nano. Buffer pin dan buffer clock global
+  menjadi urusan top-level desain itu.
+- **Ini netlist Yosys, bukan Quartus.** Tidak ada place & route, tidak ada
+  timing (SDF), dan tidak ada analisis CDC Quartus/TimeQuest. Hasil Quartus
+  bisa berbeda. Langkah berikutnya, kalau dibutuhkan, adalah menyintesis RTL
+  yang sama di Quartus dan menambahkan constraint `set_false_path` /
+  `set_max_skew` untuk jalur synchronizer.
+
+**Simulasi** (`make test-cdc_fifo-cyclonev`, `tb/cdc_fifo_cv/`): netlist
+disimulasikan dengan model sel Yosys (`share/yosys/intel_alm/common/*_sim.v`).
+Simulasi ini fungsional; delay `specify` diabaikan. Testbench hanya level port,
+karena sinyal internal hilang setelah sintesis.
+
+| Test | Cakupan |
+|---|---|
+| `test_cv_capacity_every_read_pointer` | Pointer read 0..64: tepat 32 write lalu `full=1` |
+| `test_cv_random_ratios` | 24 rasio clock acak tanpa batas isi; 3.129 item, isi maks 32, `full` 5.009 kali (sama persis dengan RTL) |
+| `test_cv_random_ratios_more_seeds` | 3 seed × 12 rasio acak |
+| `test_cv_single_domain_reset` | F6: reset satu domain mengosongkan seluruh FIFO |
+| `test_cv_reset_async_without_clocks` | Reset asinkron tanpa clock |
+
+**Struktur** (`make test-cdc_fifo-cyclonev-struct`): pemeriksaan yang sama
+dengan target generik, dijalankan pada sel `MISTRAL_FF`. Di sini pin reset-nya
+`ACLR`, yang aktif rendah.
+- Flop reset synchronizer dikenali dari strukturnya, yaitu `ACLR` yang tidak
+  berasal dari flop. Jumlahnya harus tepat 2 per domain.
+- Kalau ada flop fungsional yang menerima reset mentah, jumlah itu naik dan
+  pemeriksaannya gagal.
 
 ## Yang tidak diubah
 
-- **F4:** kapasitas 31, bukan 32 (pointer tanpa bit wrap).
-- **Metastabilitas** di synchronizer 2 flop tidak dimodelkan oleh simulasi.
+- **Metastabilitas fisik** tetap di luar jangkauan simulasi. Model di atas
+  menguji toleransi fungsional terhadap latensi synchronizer yang tidak pasti,
+  bukan MTBF.
 
 ## Verifikasi
 
@@ -82,44 +205,35 @@ pemeriksaannya identik.
 
 | Test | Cakupan | Baseline |
 |---|---|---|
-| `test_core_capacity_after_reset` | Setelah reset, tepat 31 write lalu `full=1` | gagal (F3) |
-| `test_core_capacity_every_read_pointer` | Sama, untuk pointer read 0..32 (32 = membungkus ke 0) | — |
+| `test_core_capacity_after_reset` | Setelah reset, tepat 32 write lalu `full=1` | gagal (F3; baseline maks 31) |
+| `test_core_capacity_every_read_pointer` | Sama, untuk pointer read 0..64 (kedua nilai bit wrap) | — |
 | `test_core_random_ratios` | 24 rasio clock acak tanpa batas isi; seed yang sama dengan audit | gagal (F3) |
 | `test_core_random_ratios_more_seeds` | 3 seed × 12 rasio acak tanpa batas isi | — |
-| `test_core_random_ratios_below_full` | Regresi: isi ≤ 29 | lulus |
+| `test_core_random_ratios_below_full` | Regresi: isi ≤ 30 | lulus |
 | `test_top_random_ratios_4bit` | Lewat pin TT, data 4 bit acak, tanpa batas isi | gagal (F1) |
 | `test_top_unused_outputs` | `uo_out[3:2]`, `uio_out`, `uio_oe` = 0 | lulus |
 | `test_top_rst_n_resets_fifo` | `rst_n` mengosongkan kedua domain; FIFO bekerja lagi setelahnya | gagal (F2) |
 | `test_top_rst_n_async_without_clocks` | `rst_n` bekerja asinkron saat kedua clock berhenti | — |
 | `test_top_uio_resets_still_work` | Pin reset `uio` tetap bekerja saat `rst_n` tinggi | lulus |
-| `test_registered_gray_equals_gray_of_binary` | Register Gray == `gray(pointer)` setelah setiap tepi clock (4.000 + 1.739 sampel) | — |
-| `test_reset_deassert_synchronous` | Reset tersinkron naik seketika, lalu turun tepat di tepi naik ke-2, untuk 60 fase pelepasan acak per domain | — |
-| `test_reset_held_while_clock_stopped` | Tanpa clock, domain tetap dalam reset; turun 2 tepi setelah clock berjalan; domain lain tidak terpengaruh | — |
+| `test_registered_gray_equals_gray_of_binary` | Register Gray == `gray(pointer)` (pointer lengkap dengan bit wrap) setelah setiap tepi clock | — |
+| `test_reset_deassert_synchronous` | Reset turun tepat di tepi naik ke-2 (ke-3 hanya kalau model metastabilitas aktif dan pelepasan di dalam jendela), 60 fase acak per domain | — |
+| `test_reset_held_while_clock_stopped` | Tanpa clock, domain tetap dalam reset; domain lain tidak terpengaruh | — |
 | `test_top_reset_paths_use_synchronizer` | `rst_n` dan pin `uio` sama-sama lewat synchronizer | — |
-| `test_top_write_domain_reset_empties_fifo` | Reset hanya lewat `uio_in[0]` mengosongkan seluruh FIFO; tanpa data basi; 3 item baru kembali utuh | gagal (F6) |
+| `test_top_write_domain_reset_empties_fifo` | Reset hanya lewat `uio_in[0]` mengosongkan seluruh FIFO | gagal (F6) |
 | `test_top_read_domain_reset_empties_fifo` | Sama, lewat `uio_in[1]` | gagal (F6) |
-| `test_reset_release_order_is_safe` | Clock read berhenti saat reset dilepas: domain write keluar lebih dulu dan menulis 8 item; setelah clock read berjalan, kedelapannya terbaca utuh | — |
+| `test_reset_release_order_is_safe` | Clock read berhenti saat reset dilepas; domain write menulis 8 item; semuanya terbaca utuh | — |
+| `test_metastability_model_active` | Hanya `META=1`: model aktif di kedua synchronizer, FIFO tetap benar | — |
 
-Semua test acak memeriksa urutan data (tanpa hilang, ganda, atau tertukar),
-flag `full`/`empty`, `read_data` = kepala antrean selama `empty=0`, dan langkah
-pointer Gray 1 bit.
+`test_core_random_ratios`: 3.129 item, isi maksimum 32, `full` teramati 5.009
+kali. Uji 65 posisi pointer memakan sekitar 40 detik per target.
 
-### Struktur: `make test-cdc_fifo-struct` (`tb/struct/check_cdc_regs.py`)
-
-Simulasi RTL zero-delay tidak bisa menunjukkan glitch maupun pelanggaran
-recovery/removal, jadi keduanya dibuktikan dari struktur. Skrip mensintesis
-`cdc_fifo` dengan Yosys (`synth -flatten`, gerbang generik), lalu memeriksa:
-
-- **gray:** masukan D setiap flop tingkat pertama synchronizer pointer
-  digerakkan langsung oleh keluaran Q flop domain sumber;
-- **reset:** pin reset setiap flop ber-reset (selain flop synchronizer reset
-  itu sendiri) digerakkan oleh keluaran `reset_synchronizer` domain yang sama
-  dengan clock flop tersebut.
+### Struktur (`tb/struct/check_cdc_regs.py`)
 
 | | gray | reset |
 |---|---|---|
-| Baseline #0036 (`make test-audit-struct-cdc_fifo`) | 2/10 (hanya MSB) | 0/30 |
-| `rtl/cdc_fifo/` | **10/10** | **38/38** |
+| Baseline #0036 (`make test-audit-struct-cdc_fifo`) | 2/10 | 0/30 |
+| `rtl/cdc_fifo/`, generik (`make test-cdc_fifo-struct`) | **12/12** | **46/46** |
+| `rtl/cdc_fifo/`, Cyclone V (`make test-cdc_fifo-cyclonev-struct`) | **12/12** | **50/50** (48 flop + 2 cek jumlah synchronizer) |
 
 ### Mutation check (dijalankan manual)
 
@@ -127,31 +241,29 @@ recovery/removal, jadi keduanya dibuktikan dari struktur. Skrip mensintesis
 |---|---|
 | F1 dikembalikan | `test_top_random_ratios_4bit` |
 | F2 dikembalikan | `test_top_rst_n_resets_fifo`, `test_top_rst_n_async_without_clocks` |
-| F3 dikembalikan | 4 test inti (`capacity_after_reset`, `capacity_every_read_pointer`, `random_ratios`, `random_ratios_more_seeds`) |
-| F5 dikembalikan di sisi write (Gray kombinasional lagi) | Hanya pemeriksaan struktur (6/10); semua test fungsional tetap lulus |
-| F5 salah langkah (register diisi `gray(pointer)`, bukan `gray(pointer + 1)`) | 7 test fungsional, termasuk `test_registered_gray_equals_gray_of_binary`; pemeriksaan struktur tetap lulus |
-| Reset M1: `writestate` memakai reset tanpa synchronizer | Hanya struktur reset (29/38) |
-| Reset M2: synchronizer pointer domain read direset oleh reset domain write | Hanya struktur reset (28/38) |
-| Reset M3: synchronizer hanya 1 tahap | `test_reset_deassert_synchronous`, `test_reset_held_while_clock_stopped`; struktur tetap lulus |
+| F3 dikembalikan | 4 test inti |
+| F4-a: `full` gaya lama (`wa+1 == ra`, satu slot dibuang) | 3 test kapasitas/acak |
+| F4-b: `full` mengabaikan bit wrap | 3 test kapasitas/acak |
+| F4-c: `empty` mengabaikan bit wrap | 3 test kapasitas/acak |
+| F5 dikembalikan (Gray kombinasional) | Hanya struktur: generik 6/10 (sebelum F4), Cyclone V 7/12 |
+| F5 salah langkah (`gray(pointer)` bukan `gray(pointer+1)`) | 7 test fungsional; struktur tetap lulus |
+| Reset M1: `writestate` memakai reset mentah | Hanya struktur: generik 29/38 (sebelum F4); Cyclone V "14 flop (harus 2)" |
+| Reset M2: synchronizer pointer direset domain yang salah | Hanya struktur reset (28/38, sebelum F4) |
+| Reset M3: synchronizer hanya 1 tahap | 2 test reset; struktur tetap lulus |
 | Reset M4: assert reset menjadi sinkron | 4 test reset; struktur tetap lulus |
-| F6 dikembalikan | 2 test reset satu domain + `test_reset_release_order_is_safe` |
-| F6 hanya di synchronizer domain read | `test_top_read_domain_reset_empties_fifo` |
-| F6 hanya di synchronizer domain write | `test_top_write_domain_reset_empties_fifo`, `test_reset_release_order_is_safe` |
+| F6 dikembalikan / hanya satu sisi | 1–3 test reset satu domain |
+| Pointer **biner** menyeberang domain, `CDC_GRAY_MONITOR=0` | **Tidak gagal**, baik tanpa maupun dengan model metastabilitas (lihat penjelasan di atas) |
 
-Pola yang sama berlaku untuk F5 dan reset: pemeriksaan struktur menjaga
-*sambungan* (tidak ada gerbang di jalur lintas domain, setiap flop memakai reset
-domainnya sendiri), sedangkan test cocotb menjaga *nilai dan waktu* (Gray yang
-diregister benar, reset turun tepat di tepi ke-2). Untuk F5 secara khusus:
-struktur menjaga tidak ada gerbang di jalur lintas domain, sedangkan test
-fungsional menjaga nilai yang diregister tetap benar.
-
-Untuk F3, test acak lewat pin tidak mengenai kondisi batasnya. Penjaga F3 adalah
-test inti, terutama uji 33 posisi pointer.
+Pemeriksaan struktur menjaga *sambungan*: tidak ada gerbang di jalur lintas
+domain, dan setiap flop memakai reset domainnya sendiri. Test cocotb menjaga
+*nilai dan waktu*. Model metastabilitas menjaga *toleransi terhadap latensi yang
+tidak pasti*.
 
 ### Batasan
 
-- Sintesis memakai gerbang generik Yosys, bukan sky130 + OpenLane. Belum ada
-  netlist pasca-PnR yang bisa diuji seperti audit GL baseline.
-- Pemeriksaan struktur membuktikan sambungannya: tidak ada gerbang antara flop
-  sumber dan synchronizer, dan setiap reset berasal dari synchronizer domain
-  yang benar. Ini tidak membuktikan timing atau ketahanan metastabilitas.
+- Netlist Cyclone V berasal dari Yosys, bukan Quartus. Tidak ada place &
+  route, timing, atau constraint CDC.
+- Netlist sky130 + OpenLane untuk salinan ini belum ada.
+- Model metastabilitas memakai jendela 1 ns dan resolusi satu siklus. Model ini
+  menguji fungsi, bukan MTBF.
+- Pemeriksaan struktur membuktikan sambungan, bukan timing.

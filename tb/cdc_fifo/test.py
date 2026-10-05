@@ -8,6 +8,7 @@ struktur oleh tb/struct/check_cdc_regs.py; test di sini memeriksa nilai dan
 waktunya.
 """
 
+import os
 import random
 
 import cocotb
@@ -15,24 +16,31 @@ from cocotb.clock import Clock
 from cocotb.triggers import FallingEdge, ReadOnly, RisingEdge, Timer
 from cocotb.utils import get_sim_time
 
-from cdc_fifo_bench import (CAPACITY, Port, assert_clean, fill_from, gray, init, reset,
+from cdc_fifo_bench import (ADDR_W, Port, assert_clean, fill_from, gray, init, reset,
                             run_random, single_domain_reset, single_domain_reset_ok)
+
+# F4: pointer dengan bit wrap, semua 2^ADDR_W slot terpakai (baseline: 31).
+CAPACITY = 1 << ADDR_W
+
+# Model metastabilitas aktif (make META=1)?
+META = os.environ.get("METASTABILITY_SIM") == "1"
 
 
 # --- F3: full benar di semua posisi pointer ---------------------------------
 
 @cocotb.test()
 async def test_core_capacity_after_reset(dut):
-    """F3: setelah reset (pointer read = 0), tepat 31 write diterima lalu full=1."""
+    """F3/F4: setelah reset (pointer read = 0), tepat 32 write diterima lalu full=1."""
     acc, full, empty, wa = await fill_from(dut, 0)
     assert (acc, full, empty) == (CAPACITY, 1, 0), (acc, full, empty, wa)
 
 
 @cocotb.test()
 async def test_core_capacity_every_read_pointer(dut):
-    """F3: untuk pointer read 0..32 (32 = membungkus ke 0), tepat 31 write diterima."""
+    """F3/F4: untuk pointer read 0..64 (kedua nilai bit wrap, termasuk membungkus
+    kembali ke 0), tepat 32 write diterima lalu full=1."""
     bad = []
-    for pre in range(33):
+    for pre in range(65):
         acc, full, empty, _ = await fill_from(dut, pre)
         if (acc, full, empty) != (CAPACITY, 1, 0):
             bad.append((pre, acc, full, empty))
@@ -42,7 +50,8 @@ async def test_core_capacity_every_read_pointer(dut):
 @cocotb.test()
 async def test_core_random_ratios(dut):
     """F3: 24 rasio clock acak tanpa batas isi (seed sama dengan audit yang gagal)."""
-    bench, gm, ratios, left = await run_random(dut, "core", 0xCDC1, 24, 600)
+    bench, gm, ratios, left = await run_random(dut, "core", 0xCDC1, 24, 600,
+                                               capacity=CAPACITY)
     dut._log.info("write=%d read=%d isi_maks=%d full_terlihat=%d",
                   bench.writes, bench.reads, bench.max_occ, bench.full_seen)
     assert_clean(bench, gm, left, expect_full_reached=True)
@@ -52,14 +61,16 @@ async def test_core_random_ratios(dut):
 async def test_core_random_ratios_more_seeds(dut):
     """F3: tiga seed tambahan, masing-masing 12 rasio clock acak tanpa batas isi."""
     for seed in (0xF1F0, 0x5E6E1, 0x0036):
-        bench, gm, ratios, left = await run_random(dut, "core", seed, 12, 600)
+        bench, gm, ratios, left = await run_random(dut, "core", seed, 12, 600,
+                                               capacity=CAPACITY)
         assert_clean(bench, gm, left, expect_full_reached=True)
 
 
 @cocotb.test()
 async def test_core_random_ratios_below_full(dut):
-    """Regresi: skenario yang sudah lulus di baseline tetap lulus."""
-    bench, gm, ratios, left = await run_random(dut, "core", 0xCDC0, 24, 600, max_fill=CAPACITY - 2)
+    """Regresi: skenario yang sudah lulus di baseline tetap lulus (isi <= 30)."""
+    bench, gm, ratios, left = await run_random(dut, "core", 0xCDC0, 24, 600, max_fill=CAPACITY - 2,
+                                               capacity=CAPACITY)
     assert_clean(bench, gm, left, expect_full_reached=False)
 
 
@@ -68,7 +79,8 @@ async def test_core_random_ratios_below_full(dut):
 @cocotb.test()
 async def test_top_random_ratios_4bit(dut):
     """F1+F3: lewat pin TT, data 4 bit acak, tanpa batas isi, 12 rasio clock acak."""
-    bench, gm, ratios, left = await run_random(dut, "top", 0x7070, 12, 400)
+    bench, gm, ratios, left = await run_random(dut, "top", 0x7070, 12, 400,
+                                               capacity=CAPACITY)
     dut._log.info("write=%d read=%d isi_maks=%d full_terlihat=%d",
                   bench.writes, bench.reads, bench.max_occ, bench.full_seen)
     assert_clean(bench, gm, left, expect_full_reached=True)
@@ -181,7 +193,8 @@ async def test_top_uio_resets_still_work(dut):
 
 @cocotb.test()
 async def test_registered_gray_equals_gray_of_binary(dut):
-    """F5: setelah setiap tepi clock, pointer Gray register == gray(pointer biner)."""
+    """F5: setelah setiap tepi clock, pointer Gray register == gray(pointer biner)
+    (pointer lengkap ADDRESS_WIDTH+1 bit, F4)."""
     await init(dut)
     port = Port(dut, "core")
     f = port.fifo
@@ -199,8 +212,9 @@ async def test_registered_gray_equals_gray_of_binary(dut):
     cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
     cocotb.start_soon(Clock(port.rclk, 23, units="ns").start())
     await reset(port, 10, 23)
-    cocotb.start_soon(watch(port.wclk, f.write_address, f.write_address_gray_presync, "w"))
-    cocotb.start_soon(watch(port.rclk, f.read_address, f.read_address_gray_presync, "r"))
+    # F4: Gray adalah pointer lengkap (dengan bit wrap), bukan alamat RAM.
+    cocotb.start_soon(watch(port.wclk, f.writestate.write_pointer, f.write_address_gray_presync, "w"))
+    cocotb.start_soon(watch(port.rclk, f.readstate.read_pointer, f.read_address_gray_presync, "r"))
 
     async def drive(clk, sig, p):
         while True:
@@ -270,9 +284,16 @@ async def test_reset_deassert_synchronous(dut):
         for _ in range(60):
             offset = rng.randrange(1, period)  # hindari tepat di tepi (race RTL)
             edges, delta = await _release_and_count(dut, port, domain, offset, period)
-            assert edges == 2 and delta == 0, (domain, offset, edges, delta)
+            assert delta == 0, (domain, offset, edges, delta)
+            # Dengan model metastabilitas, pelepasan dalam jendela 1 ns sebelum
+            # tepi boleh mundur satu siklus (3 tepi); di luar jendela harus 2.
+            in_window = META and (period - offset) < 1000
+            assert edges == 2 or (in_window and edges == 3), (domain, offset, edges)
             seen[domain] = seen.get(domain, 0) + 1
+            seen["mundur"] = seen.get("mundur", 0) + (edges == 3)
     dut._log.info("pelepasan diuji: %s", seen)
+    if META:
+        assert seen["mundur"] > 0, "model metastabilitas reset tidak pernah memundurkan pelepasan"
 
 
 @cocotb.test()
@@ -382,3 +403,32 @@ async def test_reset_release_order_is_safe(dut):
         await FallingEdge(port.rclk)
         port.rinc.value = 0
     assert got == sent, (got, sent)
+
+
+# --- model metastabilitas (make META=1) --------------------------------------------
+
+@cocotb.test(skip=not META)
+async def test_metastability_model_active(dut):
+    """Model metastabilitas benar-benar menyuntikkan resolusi acak di kedua
+    synchronizer pointer selama skenario ini, dan FIFO tetap benar (scoreboard +
+    monitor Gray)."""
+    if not META:  # TESTCASE eksplisit menjalankan test skip di cocotb 1.8
+        dut._log.info("dilewati: model metastabilitas tidak aktif (jalankan dengan META=1)")
+        return
+    f = dut.core
+    names = ("write_address_sync", "read_address_sync")
+
+    def counters():
+        return {n: (int(getattr(f, n).events.value), int(getattr(f, n).delayed.value))
+                for n in names}
+
+    # Penghitung di RTL kumulatif sepanjang simulasi: ukur selisihnya saja.
+    before = counters()
+    bench, gm, ratios, left = await run_random(dut, "core", 0x3E7A, 24, 600, capacity=CAPACITY)
+    after = counters()
+    stats = {n: (after[n][0] - before[n][0], after[n][1] - before[n][1]) for n in names}
+    dut._log.info("events/delayed selama test ini: %s; write=%d read=%d",
+                  stats, bench.writes, bench.reads)
+    for name, (ev, dl) in stats.items():
+        assert ev > 0 and dl > 0, f"{name}: model tidak pernah aktif ({ev}, {dl})"
+    assert_clean(bench, gm, left, expect_full_reached=True)
