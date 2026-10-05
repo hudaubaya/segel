@@ -1,6 +1,7 @@
 // Diturunkan dari TT07 #0036 (Pa1mantri/tt07_cdc_fifo @ ff14afce,
 // src/cdc_fifo_write_state.sv), Apache-2.0. Perubahan oleh SEGEL:
 //   - F3: perbandingan full memakai pointer berikutnya selebar ADDRESS_WIDTH
+//   - F5: pointer Gray diregister, bukan dibentuk kombinasional dari biner
 // Lihat docs/cdc_fifo.md dan docs/baseline_audit.md.
 
 module cdc_fifo_write_state #(
@@ -32,18 +33,26 @@ module cdc_fifo_write_state #(
     .binary(read_address)
   );
 
+  // F5: Gray dihitung dari pointer BERIKUTNYA lalu diregister bersama pointer
+  // biner. Yang menyeberang ke domain read hanya keluaran flop, sehingga tidak
+  // ada glitch kombinasional di masukan synchronizer. Nilainya di setiap siklus
+  // sama dengan gray(write_address).
+  logic [ADDRESS_WIDTH-1:0] write_address_gray_next;
+
   binary_to_gray #(
     .WIDTH(ADDRESS_WIDTH)
   ) write_addr_encode (
-    .binary(write_address),
-    .gray(write_address_gray)
+    .binary(write_address_next),
+    .gray(write_address_gray_next)
   );
 
   always_ff @ (posedge clock or posedge reset) begin
     if (reset) begin
-      write_address <= 0;
+      write_address      <= 0;
+      write_address_gray <= 0;
     end else if (increment & !full) begin
-      write_address <= write_address + 1;
+      write_address      <= write_address_next;
+      write_address_gray <= write_address_gray_next;
     end
   end
 

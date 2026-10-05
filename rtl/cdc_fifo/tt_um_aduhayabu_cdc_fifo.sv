@@ -6,6 +6,7 @@
  * src/tt_um_pa1mantri_cdc_fifo.sv). Perubahan oleh SEGEL:
  *   - nama modul top menjadi tt_um_aduhayabu_cdc_fifo
  *   - F1: write_data mengambil ui_in[7:4], bukan hanya ui_in[4]
+ *   - F2: rst_n global (aktif rendah) ikut mereset kedua domain
  * Lihat docs/cdc_fifo.md dan docs/baseline_audit.md.
  */
 
@@ -47,8 +48,11 @@ module tt_um_aduhayabu_cdc_fifo (
   
   wire read_reset,write_reset;
   
-  assign write_reset = !uio_in[0];
-  assign read_reset  = !uio_in[1];
+  // F2: rst_n global (konvensi Tiny Tapeout) mereset kedua domain sekaligus.
+  // Pin reset per domain di uio_in[0]/uio_in[1] tetap berfungsi seperti di
+  // datasheet #0036. Keduanya reset asinkron aktif rendah.
+  assign write_reset = !uio_in[0] | !rst_n;
+  assign read_reset  = !uio_in[1] | !rst_n;
   
   //Fifo instantiation
   

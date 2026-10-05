@@ -4,7 +4,7 @@ Ketiga baseline di `rtl/baseline/` diuji **apa adanya** dengan cocotb: tanpa
 satu baris pun diubah, pada commit yang di-tapeout (lihat `docs/baselines.md`).
 Tidak ada yang diperbaiki di sini; dokumen ini hanya mencatat temuan.
 Perbaikan dibuat di salinan SEGEL yang terpisah, sementara baseline tetap apa
-adanya. Saat ini F1 dan F3 sudah diperbaiki di `rtl/cdc_fifo/` (lihat
+adanya. Saat ini F1, F2, F3, dan F5 sudah diperbaiki di `rtl/cdc_fifo/` (lihat
 [`docs/cdc_fifo.md`](cdc_fifo.md)).
 
 ## Ringkasan
@@ -53,6 +53,7 @@ Menjalankan semuanya: `make test-audit` (termasuk dalam `make test`).
 | `make test-audit-gl-serdes` | 2 test netlist SerDes |
 | `make test-audit-gl-cdc_fifo` | 4 test netlist CDC FIFO |
 | `make test-audit-gl-gray` | Glitch pointer Gray di netlist CDC FIFO (Verilog murni) |
+| `make test-audit-struct-cdc_fifo` | Struktur synchronizer CDC FIFO setelah sintesis Yosys (F5) |
 | `make test-crc8-gl` | 5 test netlist CRC-8 (sama dengan `tb/crc8`) |
 
 ---
@@ -263,6 +264,7 @@ Bukti:
 - **F2 — `rst_n` global diabaikan.** [Pasti] Reset hanya lewat `uio_in[0]` dan
   `uio_in[1]`. Ini sesuai `docs/info.md`, tetapi menyimpang dari konvensi Tiny
   Tapeout. Test: `test_top_rst_n_resets_fifo`.
+  **Status:** diperbaiki di `rtl/cdc_fifo/` (SEGEL); baseline tetap apa adanya.
 - **F4 — Kapasitas 31, bukan 32.** [Pasti] Pointer tidak punya bit wrap,
   sehingga satu slot selalu kosong. Ini pilihan desain yang valid, tetapi tidak
   didokumentasikan.
@@ -270,12 +272,18 @@ Bukti:
   (`binary_to_gray`, `cdc_fifo_write_state.sv:25-30`,
   `cdc_fifo_read_state.sv:23-28`) dan langsung masuk ke flop pertama
   synchronizer. Ini bukan Gray yang diregister.
+  - **Struktur:** [Pasti] setelah sintesis generik Yosys (`synth -flatten`),
+    8 dari 10 bit masukan flop pertama synchronizer digerakkan gerbang
+    (`$_XOR_`, `$_NOT_`, `$_NAND_`), bukan langsung oleh flop. Hanya MSB, yang
+    sama di biner dan Gray, datang langsung dari flop. Test:
+    `make test-audit-struct-cdc_fifo` (`tb/struct/check_cdc_regs.py`).
   - Simulasi netlist unit-delay (`make test-audit-gl-gray`, sampling 0,25 ns,
     3.978 perubahan pointer write dan 3.976 perubahan pointer read) tidak menunjukkan glitch multi-bit.
     Net yang dipantau selalu sama dengan `gray(biner)` di setiap tepi clock.
   - Unit delay tidak memodelkan skew nyata, jadi apakah glitch terjadi di
     silikon tidak bisa dibuktikan di sini. [Menebak]
   - Praktik umum adalah meregister pointer Gray di domain sumber.
+  - **Status:** diperbaiki di `rtl/cdc_fifo/` (SEGEL); baseline tetap apa adanya.
 - Deassertion reset (dari pin, asinkron) tidak disinkronkan ke masing-masing
   clock. [Kemungkinan Besar] berisiko rendah, karena pointer sama-sama mulai
   dari 0, tetapi tidak diuji.

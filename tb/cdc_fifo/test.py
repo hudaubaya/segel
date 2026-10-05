@@ -1,14 +1,19 @@
-"""Test cocotb CDC FIFO SEGEL (rtl/cdc_fifo/): perbaikan F1 dan F3.
+"""Test cocotb CDC FIFO SEGEL (rtl/cdc_fifo/): perbaikan F1, F2, F3, F5.
 
 Memakai bench yang sama dengan audit baseline (tb/common/cdc_fifo_bench.py).
-Skenario yang di baseline ditandai expect_fail (F1, F3) di sini harus lulus.
+Skenario yang di baseline ditandai expect_fail (F1, F2, F3) di sini harus lulus.
+F5 (pointer Gray diregister) dibuktikan secara struktur oleh
+tb/struct/check_cdc_regs.py; test di sini memastikan nilainya tidak berubah.
 """
+
+import random
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import Timer
+from cocotb.triggers import FallingEdge, RisingEdge, Timer
 
-from cdc_fifo_bench import CAPACITY, Port, assert_clean, fill_from, init, reset, run_random
+from cdc_fifo_bench import (CAPACITY, Port, assert_clean, fill_from, gray, init, reset,
+                            run_random)
 
 
 # --- F3: full benar di semua posisi pointer ---------------------------------
@@ -81,3 +86,127 @@ async def test_top_unused_outputs(dut):
         await Timer(7, units="ns")
         assert dut.uo_out.value.binstr[4:6] == "00", dut.uo_out.value.binstr
         assert int(dut.uio_out.value) == 0 and int(dut.uio_oe.value) == 0
+
+
+# --- F2: rst_n global --------------------------------------------------------
+
+async def _write_n(port, n):
+    for i in range(n):
+        await FallingEdge(port.wclk)
+        port.winc.value = 1
+        port.wdata.value = (i + 1) & 0xF
+    await FallingEdge(port.wclk)
+    port.winc.value = 0
+
+
+def _pointers(port):
+    f = port.fifo
+    return (int(f.write_address.value), int(f.read_address.value),
+            int(f.write_address_gray_presync.value), int(f.read_address_gray_presync.value))
+
+
+@cocotb.test()
+async def test_top_rst_n_resets_fifo(dut):
+    """F2: rst_n rendah (pin uio reset tidak aktif) mengosongkan FIFO di kedua domain."""
+    await init(dut)
+    port = Port(dut, "top")
+    cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
+    cocotb.start_soon(Clock(port.rclk, 13, units="ns").start())
+    await reset(port, 10, 13)
+    await _write_n(port, 7)
+    await Timer(100, units="ns")
+    assert int(port.empty.value) == 0
+    dut.rst_n.value = 0
+    await Timer(30, units="ns")
+    assert _pointers(port) == (0, 0, 0, 0), _pointers(port)
+    assert int(port.empty.value) == 1 and int(port.full.value) == 0
+    dut.rst_n.value = 1
+    await Timer(100, units="ns")
+    # Setelah reset, FIFO bekerja normal lagi: tulis 3 item, baca kembali berurutan.
+    await _write_n(port, 3)
+    await Timer(100, units="ns")
+    got = []
+    for _ in range(3):
+        await FallingEdge(port.rclk)
+        assert int(port.empty.value) == 0
+        got.append(int(port.rdata.value))
+        port.rinc.value = 1
+        await FallingEdge(port.rclk)
+        port.rinc.value = 0
+    assert got == [1, 2, 3], got
+
+
+@cocotb.test()
+async def test_top_rst_n_async_without_clocks(dut):
+    """F2: rst_n bekerja asinkron, juga saat kedua clock berhenti."""
+    await init(dut)
+    port = Port(dut, "top")
+    wc = cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
+    rc = cocotb.start_soon(Clock(port.rclk, 13, units="ns").start())
+    await reset(port, 10, 13)
+    await _write_n(port, 4)
+    await Timer(100, units="ns")
+    wc.kill()
+    rc.kill()
+    await Timer(50, units="ns")
+    assert _pointers(port)[0] == 4
+    dut.rst_n.value = 0
+    await Timer(5, units="ns")
+    assert _pointers(port) == (0, 0, 0, 0), _pointers(port)
+    assert int(port.empty.value) == 1
+    dut.rst_n.value = 1
+
+
+@cocotb.test()
+async def test_top_uio_resets_still_work(dut):
+    """F2: pin reset per domain (uio_in[0]/[1]) tetap berfungsi saat rst_n tinggi."""
+    await init(dut)
+    port = Port(dut, "top")
+    cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
+    cocotb.start_soon(Clock(port.rclk, 13, units="ns").start())
+    await reset(port, 10, 13)
+    await _write_n(port, 6)
+    await Timer(100, units="ns")
+    assert int(dut.rst_n.value) == 1 and int(port.empty.value) == 0
+    port.set_reset(True)
+    await Timer(30, units="ns")
+    assert _pointers(port) == (0, 0, 0, 0), _pointers(port)
+    port.set_reset(False)
+
+
+# --- F5: nilai pointer Gray yang diregister ----------------------------------
+
+@cocotb.test()
+async def test_registered_gray_equals_gray_of_binary(dut):
+    """F5: setelah setiap tepi clock, pointer Gray register == gray(pointer biner)."""
+    await init(dut)
+    port = Port(dut, "core")
+    f = port.fifo
+    rng = random.Random(0xF5)
+    checked = {"w": 0, "r": 0}
+    bad = []
+
+    async def watch(clk, b, g, key):
+        while True:
+            await FallingEdge(clk)  # setengah siklus setelah tepi naik: nilai sudah stabil
+            if int(g.value) != gray(int(b.value)):
+                bad.append((key, int(b.value), int(g.value)))
+            checked[key] += 1
+
+    cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
+    cocotb.start_soon(Clock(port.rclk, 23, units="ns").start())
+    await reset(port, 10, 23)
+    cocotb.start_soon(watch(port.wclk, f.write_address, f.write_address_gray_presync, "w"))
+    cocotb.start_soon(watch(port.rclk, f.read_address, f.read_address_gray_presync, "r"))
+
+    async def drive(clk, sig, p):
+        while True:
+            await FallingEdge(clk)
+            sig.value = int(rng.random() < p)
+
+    cocotb.start_soon(drive(port.wclk, port.winc, 0.6))
+    cocotb.start_soon(drive(port.rclk, port.rinc, 0.6))
+    await Timer(40000, units="ns")
+    dut._log.info("dicek: write=%d read=%d", checked["w"], checked["r"])
+    assert checked["w"] > 3000 and checked["r"] > 1500
+    assert not bad, bad[:5]
