@@ -2,7 +2,8 @@
 #
 #   make test                      semua test (model, RTL, gate-level, baseline, audit)
 #   make test-<nama>               satu target: model crc8 crc8-gl cdc_fifo ascon ascon-mutants
-#                                  phy phy-units baseline-<b> audit audit-<a> (struktur butuh yosys)
+#                                  phy phy-units fpga-loopback fpga-scripts baseline-<b> audit
+#                                  audit-<a> (struktur butuh yosys, fpga-scripts butuh tclsh)
 #   make sky130-cells              unduh model sel sky130_fd_sc_hd untuk simulasi GL
 #   make ascon-vectors             unduh vektor uji resmi Ascon (ACVP NIST + KAT ascon-c)
 #   make clean                     hapus artefak simulasi (cache sel tidak ikut)
@@ -59,7 +60,8 @@ define check_results
 endef
 
 .PHONY: help test test-model test-crc8 test-ascon test-ascon-model test-ascon-mutants test-ascon-synth \
-        ascon-vectors test-phy test-phy-units test-phy-synth test-phy-fifo-struct test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline \
+        ascon-vectors test-phy test-phy-units test-phy-synth test-phy-fifo-struct \
+        test-fpga-loopback test-fpga-scripts test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-baseline \
         test-cdc_fifo-meta test-sync_meta test-cdc_fifo-cyclonev test-cdc_fifo-cyclonev-struct \
         cdc_fifo-cyclonev \
         test-audit test-audit-struct-cdc_fifo sky130-cells clean \
@@ -72,12 +74,14 @@ help:
 test: test-model test-crc8 test-crc8-gl test-cdc_fifo test-cdc_fifo-struct test-cdc_fifo-meta \
       test-sync_meta test-cdc_fifo-cyclonev test-cdc_fifo-cyclonev-struct \
       test-ascon-model test-ascon test-ascon-mutants test-ascon-synth \
-      test-phy-units test-phy test-phy-synth test-phy-fifo-struct test-baseline test-audit
+      test-phy-units test-phy test-phy-synth test-phy-fifo-struct \
+      test-fpga-loopback test-fpga-scripts test-baseline test-audit
 
 test-model:
 	@$(PYTHON) model/crc8.py
 	@$(PYTHON) model/enc8b10b.py
 	@$(PYTHON) model/ascon.py
+	@$(PYTHON) sw/ber.py --self-test
 
 # Ascon-AEAD128 / Ascon-XOF128 (rtl/ascon_core.v, docs/ascon.md)
 test-ascon-model: $(ASCON_VEC_STAMP)
@@ -127,6 +131,20 @@ test-phy-synth:
 	  synth -flatten -top phy; check -assert; tee -q -o build/phy/stat.txt stat"
 	@sed -n '/Number of cells/p' build/phy/stat.txt
 	@echo "PASS phy-synth"
+
+# Uji loopback DE10-Nano (fpga/phy_loopback, docs/phy_howto.md). Tanpa Quartus/papan:
+# simulasi top FPGA dengan model PLL/DDIO/JTAG pada ~25 dan ~5 Mbit/s, dan skrip
+# Tcl (SDC, proyek, System Console) di tclsh dengan mock.
+test-fpga-loopback:
+	@echo "==> fpga/phy_loopback (simulasi top, TX_SEL 3 dan 0)"
+	@cd tb/fpga_loopback && rm -f results_sel3.xml results_sel0.xml && \
+	  $(MAKE) --no-print-directory SIM=$(SIM) TX_SEL=3 && $(MAKE) --no-print-directory SIM=$(SIM) TX_SEL=0
+	$(call check_results,tb/fpga_loopback/results_sel3.xml,fpga-loopback-25M)
+	$(call check_results,tb/fpga_loopback/results_sel0.xml,fpga-loopback-5M)
+
+test-fpga-scripts:
+	@echo "==> fpga/phy_loopback (SDC, proyek Quartus, System Console: tclsh + mock)"
+	@$(PYTHON) tb/fpga_scripts/run_tests.py
 
 # CDC FIFO yang dipakai PHY: DATA_WIDTH = 9 (8 data + flag K)
 test-phy-fifo-struct:
@@ -275,3 +293,4 @@ clean:
 	@rm -rf tb/cdc_fifo_cv/{sim_build,results.xml,tb.vcd,__pycache__} build
 	@rm -rf tb/ascon/{sim_build,results.xml,ascon_cycles.json,__pycache__}
 	@rm -rf tb/phy/{sim_build,results.xml,phy_bit_errors.json,__pycache__} tb/phy_units/{sim_build,results.xml,__pycache__}
+	@rm -rf tb/fpga_loopback/{sim_build,results_sel*.xml,ber_sim_*,__pycache__} tb/fpga_scripts/__pycache__

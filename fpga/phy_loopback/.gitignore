@@ -1,0 +1,13 @@
+# Keluaran Quartus / Platform Designer (dibangkitkan, lihat docs/phy_howto.md)
+quartus/db/
+quartus/incremental_db/
+quartus/output_files/
+quartus/*.qpf
+quartus/*.qsf
+quartus/*.qws
+quartus/greybox_tmp/
+qsys/phy_jtag/
+qsys/phy_jtag.qsys
+qsys/*.sopcinfo
+qsys/.qsys_edit/
+scripts/*.csv
