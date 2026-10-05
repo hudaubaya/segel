@@ -1,16 +1,19 @@
-"""Test cocotb CDC FIFO SEGEL (rtl/cdc_fifo/): perbaikan F1, F2, F3, F5.
+"""Test cocotb CDC FIFO SEGEL (rtl/cdc_fifo/): perbaikan F1, F2, F3, F5, dan
+sinkronisasi reset (assert asinkron, deassert sinkron per domain).
 
 Memakai bench yang sama dengan audit baseline (tb/common/cdc_fifo_bench.py).
 Skenario yang di baseline ditandai expect_fail (F1, F2, F3) di sini harus lulus.
-F5 (pointer Gray diregister) dibuktikan secara struktur oleh
-tb/struct/check_cdc_regs.py; test di sini memastikan nilainya tidak berubah.
+F5 (pointer Gray diregister) dan sumber reset setiap flop dibuktikan secara
+struktur oleh tb/struct/check_cdc_regs.py; test di sini memeriksa nilai dan
+waktunya.
 """
 
 import random
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import FallingEdge, RisingEdge, Timer
+from cocotb.triggers import FallingEdge, ReadOnly, RisingEdge, Timer
+from cocotb.utils import get_sim_time
 
 from cdc_fifo_bench import (CAPACITY, Port, assert_clean, fill_from, gray, init, reset,
                             run_random)
@@ -210,3 +213,114 @@ async def test_registered_gray_equals_gray_of_binary(dut):
     dut._log.info("dicek: write=%d read=%d", checked["w"], checked["r"])
     assert checked["w"] > 3000 and checked["r"] > 1500
     assert not bad, bad[:5]
+
+
+# --- sinkronisasi reset --------------------------------------------------------
+
+DOMAINS = {
+    # nama: (atribut clock Port, sinyal reset masuk di tb, sinyal reset tersinkron)
+    "write": ("wclk", "c_wrst", "write_reset_sync"),
+    "read": ("rclk", "c_rrst", "read_reset_sync"),
+}
+
+
+async def _release_and_count(dut, port, domain, offset_ps, period_ps):
+    """Aktifkan reset, lepas di fase `offset_ps` setelah tepi naik, lalu hitung
+    tepi naik sampai reset tersinkron turun. Kembalikan (jumlah tepi, waktu
+    turun - waktu tepi terakhir dalam ps)."""
+    clk_name, rst_name, sync_name = DOMAINS[domain]
+    clk = getattr(port, clk_name)
+    rst = getattr(dut, rst_name)
+    sync = getattr(port.fifo, sync_name)
+
+    await Timer(1, units="ps")  # keluar dari fase ReadOnly pemanggilan sebelumnya
+    rst.value = 1
+    await Timer(1, units="ps")
+    assert int(sync.value) == 1, "assert reset tidak asinkron"
+    for _ in range(3):
+        await RisingEdge(clk)
+    await Timer(offset_ps, units="ps")
+    rst.value = 0
+    await ReadOnly()
+    assert int(sync.value) == 1, "reset tersinkron turun tanpa tepi clock"
+    edges = 0
+    while True:
+        await RisingEdge(clk)
+        t_edge = get_sim_time("ps")
+        edges += 1
+        await ReadOnly()
+        if int(sync.value) == 0:
+            return edges, get_sim_time("ps") - t_edge
+        assert edges < 10, "reset tidak pernah dilepas"
+
+
+@cocotb.test()
+async def test_reset_deassert_synchronous(dut):
+    """Reset tersinkron turun tepat di tepi naik ke-2 setelah pin reset dilepas,
+    untuk 60 fase pelepasan acak di setiap domain; assert-nya asinkron."""
+    await init(dut)
+    port = Port(dut, "core")
+    periods = {"write": 10000, "read": 23000}  # ps
+    cocotb.start_soon(Clock(port.wclk, periods["write"], units="ps").start())
+    cocotb.start_soon(Clock(port.rclk, periods["read"], units="ps").start())
+    await reset(port, 10, 23)
+    rng = random.Random(0x5EED)
+    seen = {}
+    for domain, period in periods.items():
+        for _ in range(60):
+            offset = rng.randrange(1, period)  # hindari tepat di tepi (race RTL)
+            edges, delta = await _release_and_count(dut, port, domain, offset, period)
+            assert edges == 2 and delta == 0, (domain, offset, edges, delta)
+            seen[domain] = seen.get(domain, 0) + 1
+    dut._log.info("pelepasan diuji: %s", seen)
+
+
+@cocotb.test()
+async def test_reset_held_while_clock_stopped(dut):
+    """Kalau clock domain berhenti, reset tetap aktif sampai 2 tepi clock setelah
+    clock berjalan lagi; domain lain tidak terpengaruh."""
+    await init(dut)
+    port = Port(dut, "core")
+    wc = cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
+    cocotb.start_soon(Clock(port.rclk, 23, units="ns").start())
+    await reset(port, 10, 23)
+    f = port.fifo
+    wc.kill()
+    dut.c_wrst.value = 1
+    await Timer(1, units="ns")
+    assert int(f.write_reset_sync.value) == 1
+    dut.c_wrst.value = 0
+    await Timer(500, units="ns")
+    assert int(f.write_reset_sync.value) == 1, "reset dilepas tanpa clock"
+    assert int(f.read_reset_sync.value) == 0, "domain read ikut ter-reset"
+    cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
+    await RisingEdge(port.wclk)
+    await ReadOnly()
+    assert int(f.write_reset_sync.value) == 1
+    await RisingEdge(port.wclk)
+    await ReadOnly()
+    assert int(f.write_reset_sync.value) == 0
+
+
+@cocotb.test()
+async def test_top_reset_paths_use_synchronizer(dut):
+    """rst_n dan pin uio sama-sama lewat reset synchronizer di wrapper TT."""
+    await init(dut)
+    port = Port(dut, "top")
+    cocotb.start_soon(Clock(port.wclk, 10, units="ns").start())
+    cocotb.start_soon(Clock(port.rclk, 23, units="ns").start())
+    await reset(port, 10, 23)
+    f = port.fifo
+    for assert_fn, release_fn in (
+        (lambda: setattr(dut.rst_n, "value", 0), lambda: setattr(dut.rst_n, "value", 1)),
+        (lambda: port.set_reset(True), lambda: port.set_reset(False)),
+    ):
+        assert_fn()
+        await Timer(1, units="ns")
+        assert int(f.write_reset_sync.value) == 1 and int(f.read_reset_sync.value) == 1
+        await Timer(3, units="ns")
+        release_fn()
+        await Timer(1, units="ns")
+        assert int(f.write_reset_sync.value) == 1 and int(f.read_reset_sync.value) == 1
+        await Timer(100, units="ns")
+        assert int(f.write_reset_sync.value) == 0 and int(f.read_reset_sync.value) == 0

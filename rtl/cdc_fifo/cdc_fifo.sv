@@ -1,5 +1,11 @@
 // FIFO for passing registers across clock domains
 
+// Diturunkan dari TT07 #0036 (Pa1mantri/tt07_cdc_fifo @ ff14afce,
+// src/cdc_fifo.sv), Apache-2.0. Perubahan oleh SEGEL:
+//   - reset tiap domain melewati reset_synchronizer (assert asinkron,
+//     deassert sinkron ke clock domain itu)
+// Lihat docs/cdc_fifo.md.
+
 //`include "dpram.sv"
 //`include "synchronizer.sv"
 //`include "cdc_fifo_read_state.sv"
@@ -36,6 +42,22 @@ module cdc_fifo #(
 
   assign write_enable = (!full & write_increment);
 
+  // Reset per domain: assert asinkron, deassert sinkron ke clock domain itu.
+  // Semua flop ber-reset di bawah ini memakai versi tersinkron.
+  logic write_reset_sync, read_reset_sync;
+
+  reset_synchronizer write_reset_synchronizer (
+    .clock(write_clock),
+    .reset_in(write_reset),
+    .reset_out(write_reset_sync)
+  );
+
+  reset_synchronizer read_reset_synchronizer (
+    .clock(read_clock),
+    .reset_in(read_reset),
+    .reset_out(read_reset_sync)
+  );
+
   dpram #(
     .DATA_WIDTH(DATA_WIDTH),
     .ADDRESS_WIDTH(ADDRESS_WIDTH)
@@ -52,7 +74,7 @@ module cdc_fifo #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH)
   ) writestate (
     .clock(write_clock),
-    .reset(write_reset),
+    .reset(write_reset_sync),
     .increment(write_increment),
     .read_address_gray(read_address_gray_postsync),
     .write_address(write_address),
@@ -64,7 +86,7 @@ module cdc_fifo #(
     .ADDRESS_WIDTH(ADDRESS_WIDTH)
   ) readstate (
    .clock(read_clock),
-   .reset(read_reset),
+   .reset(read_reset_sync),
    .increment(read_increment),
    .write_address_gray(write_address_gray_postsync),
    .read_address(read_address),
@@ -76,7 +98,7 @@ module cdc_fifo #(
     .WIDTH(ADDRESS_WIDTH)
   ) write_address_sync (
     .clock(read_clock),
-    .reset(read_reset),
+    .reset(read_reset_sync),
     .in(write_address_gray_presync),
     .out(write_address_gray_postsync)
   );
@@ -85,7 +107,7 @@ module cdc_fifo #(
     .WIDTH(ADDRESS_WIDTH)
   ) read_address_sync (
     .clock(write_clock),
-    .reset(write_reset),
+    .reset(write_reset_sync),
     .in(read_address_gray_presync),
     .out(read_address_gray_postsync)
   );

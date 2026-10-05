@@ -74,10 +74,11 @@ test-cdc_fifo:
 	@cd tb/cdc_fifo && rm -f results.xml && $(MAKE) --no-print-directory SIM=$(SIM)
 	$(call check_results,tb/cdc_fifo/results.xml,cdc_fifo)
 
-# F5: pointer Gray yang menyeberang domain harus langsung dari flop (sintesis Yosys).
+# F5 + reset: pointer Gray lintas domain langsung dari flop, dan setiap flop
+# ber-reset memakai reset tersinkron domainnya (sintesis Yosys).
 test-cdc_fifo-struct:
 	@echo "==> cdc_fifo (struktur synchronizer, Yosys)"
-	@$(PYTHON) tb/struct/check_cdc_regs.py --src rtl/cdc_fifo --expect registered
+	@$(PYTHON) tb/struct/check_cdc_regs.py --src rtl/cdc_fifo --gray registered --reset synced
 
 test-baseline: $(addprefix test-baseline-,$(BASELINES) crc8_0901)
 
@@ -96,10 +97,11 @@ test-baseline-crc8_0901: test-crc8-gl
 test-audit: $(addprefix test-audit-,$(AUDITS)) $(addprefix test-audit-gl-,$(AUDITS_GL)) \
             test-audit-gl-gray test-audit-struct-cdc_fifo test-crc8-gl
 
-# F5 di baseline: synchronizer masih diumpan logika kombinasional (diharapkan).
+# Baseline: synchronizer diumpan logika kombinasional dan reset tidak
+# disinkronkan (keduanya diharapkan).
 test-audit-struct-cdc_fifo:
 	@echo "==> audit cdc_fifo (struktur synchronizer, Yosys)"
-	@$(PYTHON) tb/struct/check_cdc_regs.py --src $(BASELINE_DIR)/cdc_fifo_0036/src --expect combinational
+	@$(PYTHON) tb/struct/check_cdc_regs.py --src $(BASELINE_DIR)/cdc_fifo_0036/src --gray combinational --reset unsynced
 
 $(addprefix test-audit-,$(AUDITS)): test-audit-%:
 	@echo "==> audit $* (RTL)"
