@@ -13,7 +13,7 @@ fpga/phy_loopback/   Uji loopback PHY di DE10-Nano (Quartus, System Console; doc
 fpga/release/        Build FPGA rilis
 fpga/cdc_fifo/       Sintesis CDC FIFO untuk Cyclone V (Yosys)
 sw/                  Perangkat lunak host (sw/ber.py: analisis BER)
-docs/                Dokumentasi
+docs/                Dokumentasi (ringkasan status: docs/laporan_kemajuan.md)
 ```
 
 ## Menjalankan test
